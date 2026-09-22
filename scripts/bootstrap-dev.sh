@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
+if (( $# > 1 )); then
+    echo 'Usage: bootstrap-dev.sh [--install]' >&2
+    exit 2
+fi
 if [[ "$(uname -s)" != Linux ]]; then
     echo 'Run this script inside Linux / WSL2.' >&2
     exit 1
@@ -30,4 +34,4 @@ if (( missing )); then
     echo 'On Ubuntu/Debian: bash scripts/bootstrap-dev.sh --install' >&2
     exit 1
 fi
-echo 'Dependencies found. Run bash os build and bash os run for functional checks.'
+echo 'Dependencies found. Run bash os check for functional checks.'

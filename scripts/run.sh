@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
+if (( $# )); then
+    echo 'Usage: bash os run' >&2
+    exit 2
+fi
 root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 bash "$root/scripts/bootstrap-dev.sh"
 mkdir -p "$root/build/logs"
