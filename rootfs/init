@@ -1,0 +1,19 @@
+#!/bin/sh
+# This file executes only as PID 1 inside the guest.
+if [ "$$" != 1 ]; then echo 'Guest init must run as PID 1.' >&2; exit 1; fi
+export PATH=/bin:/sbin:/usr/bin:/usr/sbin HOME=/root TERM=vt100
+fail() {
+    echo "BOOT_FAILED: $*"
+    while :; do /bin/sleep 3600; done
+}
+/bin/mount -t proc proc /proc || fail proc
+/bin/mount -t sysfs sysfs /sys || fail sysfs
+/bin/mount -t devtmpfs devtmpfs /dev || fail devtmpfs
+exec </dev/console >/dev/console 2>&1
+mkdir -p /dev/pts
+mount -t devpts devpts /dev/pts || fail devpts
+mount -t tmpfs -o mode=1777 tmpfs /tmp || fail tmp
+mount -t tmpfs tmpfs /run || fail run
+echo 'Booting NekoOS - development console'
+echo 'SYSTEM_READY'
+exec /sbin/init

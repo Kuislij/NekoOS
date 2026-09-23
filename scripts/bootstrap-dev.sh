@@ -16,13 +16,18 @@ case "${1:-}" in
             ubuntu|debian) ;;
             *) echo 'Automatic installation supports Ubuntu / Debian only.' >&2; exit 1 ;;
         esac
-        sudo apt-get update
-        sudo apt-get install -y build-essential ninja-build git qemu-system-x86
+        elevate=()
+        if (( EUID != 0 )); then elevate=(sudo); fi
+        "${elevate[@]}" apt-get update
+        "${elevate[@]}" apt-get install -y build-essential ninja-build git qemu-system-x86 \
+            curl ca-certificates xz-utils bzip2 cpio fakeroot bc bison flex \
+            libssl-dev libelf-dev python3 rsync gnupg
         ;;
     *) echo 'Usage: bootstrap-dev.sh [--install]' >&2; exit 2 ;;
 esac
 missing=0
-for tool in gcc make ninja git qemu-system-x86_64 timeout tee; do
+for tool in gcc make ninja git qemu-system-x86_64 timeout tee curl xz bzip2 \
+    cpio fakeroot bc bison flex python3 sha256sum gzip readelf flock gpg gpgv; do
     if command -v "$tool" >/dev/null 2>&1; then
         printf '[OK] %s\n' "$tool"
     else

@@ -5,6 +5,7 @@ case "${1:-help}" in
     doctor) exec bash "$root/scripts/bootstrap-dev.sh" "${@:2}" ;;
     check) exec bash "$root/scripts/check-dev.sh" "${@:2}" ;;
     build|run) exec bash "$root/scripts/$1.sh" "${@:2}" ;;
-    help|--help|-h) printf 'NekoOS stage 1\nUsage: bash os {doctor|check|build|run|help}\n' ;;
+    test) exec python3 "$root/tools/boot_test.py" "${@:2}" ;;
+    help|--help|-h) printf 'NekoOS\nUsage: bash os {doctor|check|build|run|test|help}\n' ;;
     *) printf 'Unknown command: %s\n' "$1" >&2; exit 2 ;;
 esac
