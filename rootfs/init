@@ -23,27 +23,20 @@ case " $(cat /proc/cmdline) " in
         done
         [ -b /dev/vda ] || fail 'virtual data disk not found'
         mount -t ext4 -o noatime /dev/vda /state || fail 'virtual data disk mount'
-        mkdir -p /state/home /state/root /state/var-lib || fail 'data directories'
+        mkdir -p /state/home /state/root /state/var-lib \
+            /state/usr-local/bin /state/usr-local/lib /state/usr-local/sbin || fail 'data directories'
         chmod 700 /state/root || fail 'private root home'
         mount --bind /state/home /home || fail 'persistent /home'
         mount --bind /state/root /root || fail 'persistent /root'
         mount --bind /state/var-lib /var/lib || fail 'persistent /var/lib'
+        mount --bind /state/usr-local /usr/local || fail 'persistent /usr/local'
         echo 'PERSISTENCE_READY'
-        echo 'Files in /root and /home are saved between boots.'
+        echo 'Files in /root, /home and /usr/local are saved between boots.'
         ;;
     *)
         echo 'Temporary session: files disappear after poweroff.'
         ;;
 esac
-ifconfig lo 127.0.0.1 up || fail loopback
-if [ -d /sys/class/net/eth0 ]; then
-    ifconfig eth0 up || fail 'network interface'
-    udhcpc -i eth0 -s /usr/share/udhcpc/default.script -n -q -f -t 5 -T 2 || fail dhcp
-    echo 'NETWORK_READY'
-else
-    echo 'Network disabled (start QEMU with --net to enable it).'
-fi
 echo 'Booting NekoOS - development console'
 echo 'Type neko-help for example commands.'
-echo 'SYSTEM_READY'
 exec /sbin/init

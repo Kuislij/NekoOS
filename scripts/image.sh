@@ -6,7 +6,7 @@ source "$(dirname -- "${BASH_SOURCE[0]}")/common.sh"
 stage="$root/build/rootfs"
 # Exact generated path under the verified build directory; never accept a caller path.
 rm -rf -- "$stage"
-mkdir -p "$stage"/{dev/pts,etc,home,media,mnt,opt,proc,root,run/lock,state,sys,tmp,usr/bin,usr/include,usr/lib,usr/lib64,usr/local/bin,usr/local/lib,usr/local/sbin,usr/sbin,usr/share/nekoos/examples,usr/share/udhcpc,var/cache,var/lib,var/log,var/tmp}
+mkdir -p "$stage"/{dev/pts,etc/neko/services,home,media,mnt,opt,proc,root,run/lock,state,sys,tmp,usr/bin,usr/include,usr/lib,usr/lib64,usr/local/bin,usr/local/lib,usr/local/sbin,usr/sbin,usr/share/nekoos/examples,usr/share/udhcpc,var/cache,var/lib,var/log,var/tmp}
 # One copy of each program lives under /usr. Classic paths remain available.
 ln -s usr/bin "$stage/bin"
 ln -s usr/sbin "$stage/sbin"
@@ -36,11 +36,14 @@ install -m 755 "$root/rootfs/usr/bin/neko-help" "$stage/usr/bin/neko-help"
 install -m 755 "$root/rootfs/usr/bin/neko-shell" "$stage/usr/bin/neko-shell"
 install -m 755 "$root/rootfs/usr/bin/neko-boot-status" "$stage/usr/bin/neko-boot-status"
 install -m 755 "$root/rootfs/usr/bin/neko-net-status" "$stage/usr/bin/neko-net-status"
+install -m 755 "$root/rootfs/usr/bin/neko-service" "$stage/usr/bin/neko-service"
 install -m 755 "$root/rootfs/usr/share/udhcpc/default.script" "$stage/usr/share/udhcpc/default.script"
 install -m 644 "$root/rootfs/usr/share/nekoos/examples/hello.c" \
     "$stage/usr/share/nekoos/examples/hello.c"
 install -m 755 "$root/rootfs/init" "$stage/init"
-install -m 644 "$root/rootfs/etc/"* "$stage/etc/"
+install -m 644 "$root/rootfs/etc/"{group,hosts,inittab,os-release,passwd,profile} "$stage/etc/"
+install -m 644 "$root/rootfs/etc/neko/boot-services" "$stage/etc/neko/boot-services"
+install -m 755 "$root/rootfs/etc/neko/services/network" "$stage/etc/neko/services/network"
 chmod 1777 "$stage/tmp"
 chmod 1777 "$stage/var/tmp"
 chmod 700 "$stage/root"

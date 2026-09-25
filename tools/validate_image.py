@@ -77,7 +77,8 @@ def validate(entries):
         return item
 
     for directory in (
-        '', 'dev', 'dev/pts', 'etc', 'home', 'media', 'mnt', 'opt', 'proc',
+        '', 'dev', 'dev/pts', 'etc', 'etc/neko', 'etc/neko/services',
+        'home', 'media', 'mnt', 'opt', 'proc',
         'root', 'run', 'run/lock', 'state', 'sys', 'tmp', 'usr', 'usr/bin',
         'usr/include', 'usr/lib', 'usr/lib/tcc', 'usr/lib/tcc/include',
         'usr/lib64', 'usr/local', 'usr/local/bin', 'usr/local/lib',
@@ -97,19 +98,22 @@ def validate(entries):
         require(entry(path, stat.S_ISLNK, 'symlink')[1] == target,
                 f'wrong symlink target: {path}')
     for path in ('usr/bin/busybox', 'usr/bin/neko-help', 'usr/bin/neko-shell',
+                 'usr/bin/neko-service', 'etc/neko/services/network',
                  'usr/bin/tcc', 'usr/lib/libc.so', 'init'):
         mode = entry(path, stat.S_ISREG, 'regular file')[0]
         require(mode & 0o111, f'{path} is not executable')
-    for path in ('etc/inittab', 'etc/os-release', 'etc/passwd', 'etc/group'):
+    for path in ('etc/inittab', 'etc/os-release', 'etc/passwd', 'etc/group',
+                 'etc/neko/boot-services'):
         entry(path, stat.S_ISREG, 'regular file')
     for path in ('usr/share/nekoos/examples/hello.c', 'usr/include/stdio.h',
                  'usr/include/linux/version.h',
                  'usr/lib/libc.a', 'usr/lib/crt1.o', 'usr/lib/tcc/libtcc1.a'):
         entry(path, stat.S_ISREG, 'regular file')
     require(b'ID=nekoos' in entries['etc/os-release'][1], 'wrong os-release')
-    require(b'ttyS0' in entries['etc/inittab'][1]
+    require(b'::sysinit:/usr/bin/neko-service boot' in entries['etc/inittab'][1]
+            and b'ttyS0' in entries['etc/inittab'][1]
             and b'neko-shell' in entries['etc/inittab'][1],
-            'serial shell missing')
+            'boot services or serial shell missing')
     for path, major, minor in (('dev/console', 5, 1), ('dev/null', 1, 3)):
         mode, _, actual_major, actual_minor = entry(path, stat.S_ISCHR, 'device')
         require((actual_major, actual_minor) == (major, minor),

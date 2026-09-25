@@ -1,0 +1,27 @@
+#!/bin/sh
+case "$1" in
+    start)
+        ifconfig lo 127.0.0.1 up || exit 1
+        if [ -d /sys/class/net/eth0 ]; then
+            ifconfig eth0 up || exit 1
+            udhcpc -i eth0 -s /usr/share/udhcpc/default.script -n -q -f -t 5 -T 2 || exit 1
+            echo 'NETWORK_READY'
+        else
+            echo 'Network disabled (start QEMU with --net to enable it).'
+        fi
+        ;;
+    stop)
+        if [ -d /sys/class/net/eth0 ]; then
+            ifconfig eth0 0.0.0.0 down || exit 1
+            rm -f /etc/resolv.conf || exit 1
+        fi
+        ;;
+    status)
+        if [ -d /sys/class/net/eth0 ]; then
+            ifconfig eth0
+        else
+            echo 'network: offline (no virtual NIC)'
+        fi
+        ;;
+    *) exit 2 ;;
+esac

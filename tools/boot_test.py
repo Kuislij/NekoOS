@@ -101,6 +101,8 @@ def boot_network(args):
                     if ('NETWORK_READY' in lines and 'SYSTEM_READY' in lines
                             and 'built-in shell (ash)' in content and not sent):
                         checks = [
+                            b'neko-service restart network',
+                            b'neko-service status network',
                             b'neko-net-status',
                             b"ifconfig eth0 | grep -Fq '10.0.2.'",
                             b"route -n | grep -Fq '10.0.2.2'",
@@ -180,6 +182,8 @@ def boot(args):
                     process.stdin.write(
                         b"test -L /bin && test -x /usr/bin/busybox && "
                         b"test -d /var/lib && test -d /usr/local/bin && "
+                        b"neko-service list | grep -Fqx network && "
+                        b"neko-service status network && "
                         b"test -r /proc/version && test -d /sys/kernel && "
                         b"test -c /dev/console && test -c /dev/pts/ptmx && "
                         b"echo neko-test > /tmp/smoke && "
@@ -242,15 +246,23 @@ def boot_disk(args):
     token = secrets.token_hex(12)
     state_files = [f'{directory}/.nekoos-persistence-test-{token}'
                    for directory in ('/root', '/home', '/var/lib')]
+    program_name = f'neko-test-{token}'
+    program_path = f'/usr/local/bin/{program_name}'
     write = (
         'test "$PWD" = /root && '
         + ' && '.join(f"printf '%s' '{token}' > {path}" for path in state_files)
+        + " && printf '%s\\n' '#include <stdio.h>' "
+        + f"'int main(void) {{ puts(\"{token}\"); return 0; }}' > /tmp/local-program.c"
+        + f' && cc /tmp/local-program.c -o {program_path}'
         + " && sync && printf '\\n%s%s\\n' 'WRITE_' 'OK' && poweroff\n"
     ).encode('ascii')
     verify = (
         ' && '.join(f'test "$(cat {path})" = "{token}"' for path in state_files)
+        + f' && test "$(command -v {program_name})" = "{program_path}"'
+        + f' && test "$({program_name})" = "{token}"'
         + " && printf '\\n%s%s\\n' 'PERSISTENCE_' 'OK' && "
         + ' && '.join(f'rm {path}' for path in state_files)
+        + f' && rm {program_path}'
         + ' && sync && poweroff\n'
     ).encode('ascii')
     with (ROOT / 'out/disks/.run-lock').open('w') as lock:

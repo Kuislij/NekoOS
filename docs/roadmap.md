@@ -5,16 +5,17 @@
 Начальная часть этапа 11 завершена: BIOS ISO с GRUB, запуском в QEMU и
 проверкой CPU/RAM/прерываний/ACPI/virtio-blk/ext4.
 Первая часть этапа 10 готова: IPv4/TCP/UDP/ICMP, virtio-net, DHCP и HTTP-клиент.
-Следующий scope — базовая система и выбор libc/init.
+Базовая система дополнена постоянным `/usr/local` и начальным запуском служб.
+Следующий scope — единая libc, затем формат пакета и менеджер пакетов.
 
 1. **Готово.** WSL2/Ubuntu, зависимости, две проверки компилятора/Make/Ninja/QEMU.
 2. **Готово.** Закреплённые Linux/BusyBox, SHA256, OpenPGP-подпись Linux,
    initramfs, `/init`, proc/sys/dev, serial shell, тест команд и poweroff.
 3. **Готово.** Единый `/usr`, каталоги `/etc`, `/var`, `/home`, `/tmp`, `/run`,
    права доступа, проверка архива и работающей гостевой системы.
-4. **В работе.** Создан отдельный сохраняемый диск ext4 для `/root`, `/home`
-   и `/var/lib`; добавлены `sh`, TinyCC, musl и C-заголовки. Далее:
-   привести базовую систему к единой libc и добавить системные утилиты.
+4. **В работе.** Создан отдельный сохраняемый диск ext4 для `/root`, `/home`,
+   `/var/lib` и `/usr/local`; добавлены `sh`, TinyCC, musl, C-заголовки и
+   начальный запуск служб. Далее: привести базовую систему к единой libc.
 5. Формат пакета: сравнить tar.zst + metadata с альтернативами; описать
    version, architecture, license, dependencies, manifest и hashes.
 6. Локальный package manager: install/remove/list/info, база и восстановление

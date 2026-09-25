@@ -1,2 +1,2 @@
-export PATH=/bin:/sbin:/usr/bin:/usr/sbin
+export PATH=/usr/local/bin:/usr/local/sbin:/bin:/sbin:/usr/bin:/usr/sbin
 export PS1='neko# '

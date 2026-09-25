@@ -1,3 +1,4 @@
+::sysinit:/usr/bin/neko-service boot
 ttyS0::respawn:/usr/bin/neko-shell
 ::ctrlaltdel:/sbin/reboot
 ::shutdown:/bin/sync

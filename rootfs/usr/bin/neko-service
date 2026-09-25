@@ -1,0 +1,47 @@
+#!/bin/sh
+services=/etc/neko/services
+manifest=/etc/neko/boot-services
+usage() {
+    echo 'Usage: neko-service {list|status|start|stop|restart} [service]' >&2
+    exit 2
+}
+resolve() {
+    case "$1" in
+        ''|*[!A-Za-z0-9_-]*) usage ;;
+    esac
+    service="$services/$1"
+    [ -f "$service" ] && [ -x "$service" ] && [ ! -L "$service" ] || {
+        echo "Unknown service: $1" >&2
+        exit 1
+    }
+}
+case "$1" in
+    boot)
+        [ "$#" -eq 1 ] || usage
+        while IFS= read -r name || [ -n "$name" ]; do
+            case "$name" in ''|\#*) continue ;; esac
+            resolve "$name"
+            echo "Starting service: $name"
+            "$service" start || {
+                echo "BOOT_FAILED: service $name"
+                while :; do sleep 3600; done
+            }
+        done < "$manifest"
+        echo 'SYSTEM_READY'
+        ;;
+    list)
+        [ "$#" -eq 1 ] || usage
+        cat "$manifest"
+        ;;
+    status|start|stop)
+        [ "$#" -eq 2 ] || usage
+        resolve "$2"
+        exec "$service" "$1"
+        ;;
+    restart)
+        [ "$#" -eq 2 ] || usage
+        resolve "$2"
+        "$service" stop && exec "$service" start
+        ;;
+    *) usage ;;
+esac
