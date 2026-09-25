@@ -20,7 +20,7 @@ case "${1:-}" in
         if (( EUID != 0 )); then elevate=(sudo); fi
         "${elevate[@]}" apt-get update
         "${elevate[@]}" apt-get install -y build-essential ninja-build git qemu-system-x86 \
-            qemu-utils e2fsprogs \
+            qemu-utils e2fsprogs grub-common grub-pc-bin xorriso \
             curl ca-certificates xz-utils bzip2 cpio fakeroot bc bison flex \
             libssl-dev libelf-dev python3 rsync gnupg
         ;;

@@ -16,10 +16,13 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--no-build', action='store_true', help='test existing images')
     parser.add_argument('--disk', action='store_true', help='verify persistence across two boots')
+    parser.add_argument('--iso', action='store_true', help='boot the persistent VM through BIOS and GRUB')
     parser.add_argument('--timeout', type=int, default=90, help='boot deadline in seconds')
     args = parser.parse_args()
     if args.timeout < 1:
         parser.error('--timeout must be positive')
+    if args.iso:
+        args.disk = True
     if sys.platform != 'linux' or os.geteuid() == 0:
         parser.error('run as a regular Linux / WSL2 user')
     (ROOT / 'build').mkdir(exist_ok=True)
@@ -43,7 +46,7 @@ def boot(args):
     log.parent.mkdir(parents=True, exist_ok=True)
     command = [
         'qemu-system-x86_64', '-machine', 'q35', '-accel', 'tcg',
-        '-cpu', 'qemu64', '-m', '256M', '-smp', '1', '-nodefaults',
+        '-cpu', 'qemu64', '-m', '256M', '-smp', '2', '-nodefaults',
         '-display', 'none', '-monitor', 'none', '-serial', 'stdio',
         '-nic', 'none', '-no-reboot',
         '-kernel', str(images / 'bzImage'),
@@ -81,6 +84,7 @@ def boot(args):
                         b"cc /usr/share/nekoos/examples/hello.c -o /tmp/example && "
                         b"/tmp/example && "
                         b"uname -r && cat /etc/os-release && neko-help && "
+                        b"neko-boot-status && "
                         b"printf '\\n%s%s\\n' 'SHELL_' 'READY' && poweroff || poweroff\n"
                     )
                     process.stdin.flush()
@@ -90,7 +94,8 @@ def boot(args):
                     # Re-read after exit: the last serial output may arrive during poll.
                     lines = log.read_text(errors='replace').replace('\r', '').splitlines()
                     if (code == 0 and sent and 'SHELL_READY' in lines
-                            and 'C_READY' in lines and 'Hello from NekoOS' in lines
+                            and 'C_READY' in lines and 'HARDWARE_READY' in lines
+                            and 'Hello from NekoOS' in lines
                             and any('Power down' in line for line in lines)):
                         print(f'BOOT_TEST_PASSED: init, shell, filesystems, poweroff. Log: {log}')
                         return 0
@@ -119,6 +124,10 @@ def boot_disk(args):
     subprocess.run(['sha256sum', '-c', 'SHA256SUMS'], cwd=images, check=True)
     subprocess.run([sys.executable, str(ROOT / 'tools/validate_image.py'),
                     str(images / 'initramfs.cpio.gz')], check=True)
+    if args.iso:
+        if not args.no_build:
+            subprocess.run(['bash', str(ROOT / 'scripts/create-iso.sh')], check=True)
+        subprocess.run(['sha256sum', '-c', 'ISO_SHA256SUMS'], cwd=images, check=True)
     subprocess.run(['bash', str(ROOT / 'scripts/create-disk.sh')], check=True)
     disk = ROOT / 'out/disks/state.img'
     if disk.is_symlink() or not disk.is_file():
@@ -142,26 +151,34 @@ def boot_disk(args):
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             raise RuntimeError('This NekoOS virtual disk is already in use') from None
-        run_disk_guest(images, disk, write, 'WRITE_OK', 1, args.timeout)
-        run_disk_guest(images, disk, verify, 'PERSISTENCE_OK', 2, args.timeout)
-    print('DISK_TEST_PASSED: data survived poweroff and the next boot')
+        run_disk_guest(images, disk, write, 'WRITE_OK', 1, args.timeout, args.iso)
+        run_disk_guest(images, disk, verify, 'PERSISTENCE_OK', 2, args.timeout, args.iso)
+    print(('ISO_BOOT_TEST_PASSED' if args.iso else 'DISK_TEST_PASSED')
+          + ': data survived poweroff and the next boot')
     return 0
 
 
-def run_disk_guest(images, disk, guest_command, marker, pass_number, timeout):
-    log = ROOT / 'build/logs' / f'disk-test-{pass_number}.log'
+def run_disk_guest(images, disk, guest_command, marker, pass_number, timeout, iso):
+    log = ROOT / 'build/logs' / f'{"iso" if iso else "disk"}-test-{pass_number}.log'
     log.parent.mkdir(parents=True, exist_ok=True)
     command = [
         'qemu-system-x86_64', '-machine', 'q35', '-accel', 'tcg',
-        '-cpu', 'qemu64', '-m', '256M', '-smp', '1', '-nodefaults',
+        '-cpu', 'qemu64', '-m', '256M', '-smp', '2', '-nodefaults',
         '-display', 'none', '-monitor', 'none', '-serial', 'stdio',
         '-nic', 'none', '-no-reboot',
         '-drive', f'file={disk},format=raw,if=virtio',
-        '-kernel', str(images / 'bzImage'),
-        '-initrd', str(images / 'initramfs.cpio.gz'),
-        '-append', 'console=ttyS0,115200 rdinit=/init panic=-1 '
-                   'neko.state=required',
     ]
+    if iso:
+        command += ['-drive', f'file={images / "NekoOS.iso"},media=cdrom,if=ide',
+                    '-boot', 'order=d']
+        hardware_check = (b'neko-boot-status && '
+                          b'test "$(cat /sys/devices/system/cpu/online)" = 0-1 && ')
+        guest_command = hardware_check + guest_command.rstrip(b'\n') + b' || poweroff\n'
+    else:
+        command += ['-kernel', str(images / 'bzImage'),
+                    '-initrd', str(images / 'initramfs.cpio.gz'),
+                    '-append', 'console=ttyS0,115200 rdinit=/init panic=-1 '
+                               'neko.state=required']
     with log.open('wb') as output:
         process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=output,
                                    stderr=subprocess.STDOUT)
@@ -180,6 +197,8 @@ def run_disk_guest(images, disk, guest_command, marker, pass_number, timeout):
                 if code is not None:
                     lines = log.read_text(errors='replace').replace('\r', '').splitlines()
                     if (code == 0 and sent and marker in lines
+                            and (not iso or ('NEKO_BOOTLOADER_READY' in content
+                                             and 'HARDWARE_READY' in lines))
                             and any('Power down' in line for line in lines)):
                         return
                     raise RuntimeError(f'Disk boot {pass_number} failed; see {log}')

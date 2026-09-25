@@ -51,6 +51,25 @@ poweroff
 отключения питания. Сетевая карта, физические диски и общие папки к VM не
 подключены.
 
+### Загрузка через BIOS и GRUB
+
+Для проверки полного пути загрузки в виртуальной машине соберите ISO и
+запустите его с тем же виртуальным диском:
+
+```bash
+bash os build
+bash os iso
+bash os test --iso --no-build
+bash os run --iso
+```
+
+`bash os run --iso` сам пересобирает ядро и ISO; `bash os iso` использует уже
+собранные файлы. В консоли `neko#` команда `neko-boot-status` показывает,
+обнаружены ли процессоры, RAM, прерывания, таблицы ACPI, виртуальный диск и
+ext4. ISO предназначен для виртуального BIOS в QEMU и загружается с отдельным
+диском `state.img`; это пока не установочный образ и не образ для UEFI.
+Физические диски компьютера не используются.
+
 ### Программа на C внутри NekoOS
 
 Сначала можно собрать готовый пример в консоли `neko#`:
@@ -88,16 +107,20 @@ musl. Файлы `hello.c` и `hello` останутся в `/root` после `
 | `bash os check` | Два теста компилятора, Make/Ninja и старта QEMU |
 | `bash os build` | Проверка исходников, сборка ядра, BusyBox, initramfs |
 | `bash os image` | Создать виртуальный диск, если его ещё нет; существующие файлы не стирает |
+| `bash os iso` | Создать загрузочный BIOS ISO из уже собранных ядра и initramfs |
 | `bash os run` | Сборка и консоль с сохранением файлов |
+| `bash os run --iso` | Сборка и запуск через виртуальный BIOS и GRUB |
 | `bash os run --ram` | Временная консоль без диска; файлы исчезают после выключения |
 | `bash os run --verbose` | Сборка и полный вывод ядра при загрузке |
 | `bash os test` | Сборка и автоматический тест временной гостевой системы |
 | `bash os test --disk` | Две загрузки с проверкой сохранённого файла |
+| `bash os test --iso` | Две загрузки ISO через BIOS и GRUB, проверка оборудования и данных |
 | `bash os test --no-build` | Тест уже собранных файлов с проверкой их SHA256 |
 
-Результаты: `out/images/bzImage`, `initramfs.cpio.gz`, конфигурации и
-`SHA256SUMS`. Логи: `build/logs/build.log`, `serial.log`, `boot-test.log`,
-`disk-test-1.log`, `disk-test-2.log`, `check-dev.log`. Полный вывод сборки
+Результаты: `out/images/bzImage`, `initramfs.cpio.gz`, `NekoOS.iso`,
+конфигурации и контрольные суммы. Логи: `build/logs/build.log`, `serial.log`,
+`boot-test.log`, `disk-test-*.log`, `iso-test-*.log`, `check-dev.log`.
+Полный вывод сборки
 при `os run` также находится в `run-build.log`. Сборки, кэш, логи и
 виртуальный диск исключены из Git. **Не удаляйте `out/disks/state.img`, если
 нужны сохранённые файлы.** Для резервной копии сначала выключите VM,
@@ -116,3 +139,4 @@ musl. Файлы `hello.c` и `hello` останутся в `/root` после `
 [Результаты проверки этапа 3](docs/validation-2026-09-25.md).
 [Проверка сохраняемого диска](docs/validation-persistence-2026-09-25.md).
 [Проверка C toolchain](docs/validation-c-toolchain-2026-09-25.md).
+[Проверка загрузки через BIOS и GRUB](docs/validation-boot-2026-09-25.md).

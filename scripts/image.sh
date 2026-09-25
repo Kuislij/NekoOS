@@ -34,6 +34,7 @@ for applet in init halt poweroff reboot; do
 done
 install -m 755 "$root/rootfs/usr/bin/neko-help" "$stage/usr/bin/neko-help"
 install -m 755 "$root/rootfs/usr/bin/neko-shell" "$stage/usr/bin/neko-shell"
+install -m 755 "$root/rootfs/usr/bin/neko-boot-status" "$stage/usr/bin/neko-boot-status"
 install -m 644 "$root/rootfs/usr/share/nekoos/examples/hello.c" \
     "$stage/usr/share/nekoos/examples/hello.c"
 install -m 755 "$root/rootfs/init" "$stage/init"

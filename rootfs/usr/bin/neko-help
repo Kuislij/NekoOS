@@ -11,6 +11,7 @@ NekoOS 0.1 — краткая помощь
   echo test > /tmp/hi      Записать временный файл
   cc /usr/share/nekoos/examples/hello.c -o hello
   ./hello                 Собрать и запустить пример на C
+  neko-boot-status        Проверить CPU, RAM, прерывания, ACPI, диск и ext4
   poweroff                Выключить виртуальную машину
 
 Файлы в /root и /home сохраняются при обычном запуске с диском.

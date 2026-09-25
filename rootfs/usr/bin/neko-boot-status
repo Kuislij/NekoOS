@@ -1,0 +1,22 @@
+#!/bin/sh
+# Inspect the hardware path after /init has mounted the virtual filesystems.
+fail() { echo "HARDWARE_FAILED: $*"; exit 1; }
+grep -q '^processor[[:space:]]*:' /proc/cpuinfo || fail cpu
+grep -q '^MemTotal:' /proc/meminfo || fail memory
+grep -q 'System RAM' /proc/iomem || fail memory-map
+grep -q 'LOC:' /proc/interrupts || fail local-apic
+[ -r /sys/devices/system/cpu/online ] || fail online-cpus
+[ -r /sys/firmware/acpi/tables/DSDT ] || fail acpi
+echo "Online CPUs: $(cat /sys/devices/system/cpu/online)"
+grep '^MemTotal:' /proc/meminfo
+echo 'ACPI DSDT: available'
+echo 'Interrupt controller: active'
+case " $(cat /proc/cmdline) " in
+    *' neko.state=required '*)
+        [ -b /dev/vda ] || fail virtio-block
+        grep -q '^/dev/vda /state ext4 ' /proc/mounts || fail ext4
+        echo 'Virtual storage: /dev/vda mounted as ext4 at /state'
+        ;;
+    *) echo 'Virtual storage: temporary RAM session' ;;
+esac
+echo 'HARDWARE_READY'

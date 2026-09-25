@@ -50,9 +50,11 @@ bout="$root/build/busybox-$BUSYBOX_VERSION"
 mkdir -p "$kout" "$bout"
 make -C "$kernel" O="$kout" ARCH=x86_64 \
     KCONFIG_ALLCONFIG="$root/kernel/configs/x86_64.config" allnoconfig
-for option in CONFIG_BLK_DEV CONFIG_VIRTIO_PCI CONFIG_VIRTIO_BLK CONFIG_EXT4_FS; do
+for option in CONFIG_SMP CONFIG_X86_LOCAL_APIC CONFIG_X86_IO_APIC CONFIG_ACPI \
+    CONFIG_BLK_DEV CONFIG_VIRTIO_PCI CONFIG_VIRTIO_BLK CONFIG_EXT4_FS; do
     grep -Fqx "$option=y" "$kout/.config" || die "Kernel option $option was not enabled."
 done
+grep -Fqx 'CONFIG_NR_CPUS=2' "$kout/.config" || die 'Kernel must support two virtual CPUs.'
 make -C "$kernel" O="$kout" ARCH=x86_64 -j"$jobs" bzImage
 make -C "$busybox" O="$bout" allnoconfig
 # BusyBox's older Kconfig resets booleans during allnoconfig. Apply our
