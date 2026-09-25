@@ -1,0 +1,13 @@
+#!/bin/sh
+if [ ! -d /sys/class/net/eth0 ]; then
+    echo 'Network is off. Start NekoOS with: bash os run --net'
+    exit 0
+fi
+ifconfig eth0 || exit 1
+route -n || exit 1
+if [ -s /etc/resolv.conf ]; then
+    echo 'DNS servers:'
+    cat /etc/resolv.conf
+else
+    echo 'No DNS server configured.'
+fi

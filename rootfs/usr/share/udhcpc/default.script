@@ -1,0 +1,26 @@
+#!/bin/sh
+# DHCP hook run by BusyBox udhcpc in the guest.
+case "$1" in
+    deconfig)
+        ifconfig "$interface" 0.0.0.0 up || exit 1
+        ;;
+    bound|renew)
+        [ -n "$ip" ] || exit 1
+        if [ -n "$subnet" ]; then
+            ifconfig "$interface" "$ip" netmask "$subnet" up || exit 1
+        else
+            ifconfig "$interface" "$ip" up || exit 1
+        fi
+        route del default dev "$interface" 2>/dev/null || :
+        for gateway in $router; do
+            route add default gw "$gateway" dev "$interface" || exit 1
+            break
+        done
+        : > /etc/resolv.conf.new || exit 1
+        for server in $dns; do
+            printf 'nameserver %s\n' "$server" >> /etc/resolv.conf.new || exit 1
+        done
+        mv /etc/resolv.conf.new /etc/resolv.conf || exit 1
+        ;;
+esac
+exit 0

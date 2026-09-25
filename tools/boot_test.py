@@ -2,12 +2,14 @@
 """Boot the actual guest, exercise its shell, and require clean poweroff."""
 import argparse
 import fcntl
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import os
 from pathlib import Path
 import secrets
 import subprocess
 import sys
 import time
+from threading import Thread
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -17,22 +19,127 @@ def main():
     parser.add_argument('--no-build', action='store_true', help='test existing images')
     parser.add_argument('--disk', action='store_true', help='verify persistence across two boots')
     parser.add_argument('--iso', action='store_true', help='boot the persistent VM through BIOS and GRUB')
+    parser.add_argument('--net', action='store_true', help='verify DHCP, loopback and HTTP over virtio-net')
     parser.add_argument('--timeout', type=int, default=90, help='boot deadline in seconds')
     args = parser.parse_args()
     if args.timeout < 1:
         parser.error('--timeout must be positive')
     if args.iso:
         args.disk = True
+    if args.net and args.disk:
+        parser.error('--net test uses a temporary VM; do not combine it with --disk or --iso')
     if sys.platform != 'linux' or os.geteuid() == 0:
         parser.error('run as a regular Linux / WSL2 user')
     (ROOT / 'build').mkdir(exist_ok=True)
-    lock_name = '.disk-test.lock' if args.disk else '.boot-test.lock'
+    if args.net:
+        lock_name = '.network-test.lock'
+    elif args.disk:
+        lock_name = '.disk-test.lock'
+    else:
+        lock_name = '.boot-test.lock'
     with (ROOT / 'build' / lock_name).open('w') as lock:
         try:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             raise RuntimeError('Another boot test is already running') from None
-        return boot_disk(args) if args.disk else boot(args)
+        if args.net:
+            return boot_network(args)
+        if args.disk:
+            return boot_disk(args)
+        return boot(args)
+
+
+def boot_network(args):
+    if not args.no_build:
+        subprocess.run(['bash', str(ROOT / 'scripts/build.sh')], check=True)
+    images = ROOT / 'out/images'
+    subprocess.run(['sha256sum', '-c', 'SHA256SUMS'], cwd=images, check=True)
+    subprocess.run([sys.executable, str(ROOT / 'tools/validate_image.py'),
+                    str(images / 'initramfs.cpio.gz')], check=True)
+
+    class LocalHandler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            if self.path != '/check':
+                self.send_error(404)
+                return
+            payload = b'NEKO_NETWORK_READY\n'
+            self.server.served = True
+            self.send_response(200)
+            self.send_header('Content-Length', str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
+
+        def log_message(self, *_args):
+            pass
+
+    server = ThreadingHTTPServer(('127.0.0.1', 0), LocalHandler)
+    server.served = False
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    port = server.server_address[1]
+    log = ROOT / 'build/logs/network-test.log'
+    log.parent.mkdir(parents=True, exist_ok=True)
+    command = [
+        'qemu-system-x86_64', '-machine', 'q35', '-accel', 'tcg',
+        '-cpu', 'qemu64', '-m', '256M', '-smp', '2', '-nodefaults',
+        '-display', 'none', '-monitor', 'none', '-serial', 'stdio',
+        '-nic', 'user,model=virtio-net-pci,ipv6=off', '-no-reboot',
+        '-kernel', str(images / 'bzImage'),
+        '-initrd', str(images / 'initramfs.cpio.gz'),
+        '-append', 'console=ttyS0,115200 rdinit=/init panic=-1',
+    ]
+    try:
+        with log.open('wb') as output:
+            process = subprocess.Popen(command, stdin=subprocess.PIPE,
+                                       stdout=output, stderr=subprocess.STDOUT)
+            try:
+                deadline = time.monotonic() + args.timeout
+                sent = False
+                while time.monotonic() < deadline:
+                    content = log.read_text(errors='replace')
+                    lines = content.replace('\r', '').splitlines()
+                    if ('NETWORK_READY' in lines and 'SYSTEM_READY' in lines
+                            and 'built-in shell (ash)' in content and not sent):
+                        checks = [
+                            b'neko-net-status',
+                            b"ifconfig eth0 | grep -Fq '10.0.2.'",
+                            b"route -n | grep -Fq '10.0.2.2'",
+                            b"grep -Fqx 'nameserver 10.0.2.3' /etc/resolv.conf",
+                            b'ping -c 1 -W 2 127.0.0.1 > /tmp/ping.log',
+                            f'wget -q -O /tmp/network.txt http://10.0.2.2:{port}/check'.encode(),
+                            b'test "$(cat /tmp/network.txt)" = NEKO_NETWORK_READY',
+                            b"printf '\\n%s%s\\n' 'NETWORK_TEST_' 'PASSED'",
+                        ]
+                        guest_command = b' && '.join(checks) + b' && poweroff || poweroff\n'
+                        process.stdin.write(guest_command)
+                        process.stdin.flush()
+                        sent = True
+                    code = process.poll()
+                    if code is not None:
+                        lines = log.read_text(errors='replace').replace('\r', '').splitlines()
+                        if (code == 0 and sent and server.served
+                                and 'NETWORK_TEST_PASSED' in lines
+                                and any('Power down' in line for line in lines)):
+                            print(f'NETWORK_TEST_PASSED: DHCP, DNS config, ICMP, HTTP. Log: {log}')
+                            return 0
+                        raise RuntimeError(f'Network boot failed; see {log}')
+                    if 'Kernel panic' in content or 'BOOT_FAILED:' in content:
+                        raise RuntimeError(f'Network boot failed; see {log}')
+                    time.sleep(0.1)
+                raise RuntimeError(f'Network boot timed out; see {log}')
+            finally:
+                if process.poll() is None:
+                    process.terminate()
+                    try:
+                        process.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        process.kill()
+                        process.wait()
+                process.stdin.close()
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
 
 
 def boot(args):
@@ -222,5 +329,5 @@ if __name__ == '__main__':
         sys.exit(main())
     except (OSError, RuntimeError, subprocess.SubprocessError) as error:
         print(f'BOOT_TEST_FAILED: {error}', file=sys.stderr)
-        print(f'See {ROOT / "build/logs/boot-test.log"}', file=sys.stderr)
+        print(f'See {ROOT / "build/logs"} for the guest boot log', file=sys.stderr)
         sys.exit(1)

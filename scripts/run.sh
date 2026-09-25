@@ -4,12 +4,14 @@ source "$(dirname -- "${BASH_SOURCE[0]}")/common.sh"
 quiet='quiet loglevel=4'
 mode=disk
 boot=direct
+network=off
 for option in "$@"; do
     case "$option" in
         --verbose) quiet='' ;;
         --ram) mode=ram ;;
         --iso) boot=iso ;;
-        *) die 'Usage: bash os run [--ram] [--iso] [--verbose]' ;;
+        --net) network=on ;;
+        *) die 'Usage: bash os run [--ram] [--iso] [--net] [--verbose]' ;;
     esac
 done
 [[ "$boot" != iso || "$mode" != ram ]] || die 'ISO boot currently requires the persistent virtual disk.'
@@ -20,6 +22,11 @@ if ! bash "$root/scripts/build.sh" > "$root/build/logs/run-build.log" 2>&1; then
     die 'Сборка не удалась. Полный вывод: build/logs/build.log'
 fi
 drive_args=()
+net_args=(-nic none)
+if [[ "$network" == on ]]; then
+    net_args=(-nic user,model=virtio-net-pci,ipv6=off)
+    echo 'Виртуальная сеть включена: DHCP и исходящие подключения через QEMU.'
+fi
 boot_args=(-kernel "$root/out/images/bzImage" -initrd "$root/out/images/initramfs.cpio.gz")
 append="console=ttyS0,115200 rdinit=/init panic=-1 $quiet"
 if [[ "$mode" == disk ]]; then
@@ -44,7 +51,7 @@ else
 fi
 echo 'Когда появится neko#, введите neko-help. Выход: Ctrl+A, затем X.'
 exec qemu-system-x86_64 -machine q35 -accel tcg -cpu qemu64 -m 256M -smp 2 \
-    -nodefaults -display none -monitor none -nic none -no-reboot \
+    -nodefaults -display none -monitor none "${net_args[@]}" -no-reboot \
     "${drive_args[@]}" \
     -chardev stdio,id=console,mux=on,signal=off,logfile="$root/build/logs/serial.log" \
     -serial chardev:console \

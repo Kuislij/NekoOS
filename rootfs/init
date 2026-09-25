@@ -35,6 +35,14 @@ case " $(cat /proc/cmdline) " in
         echo 'Temporary session: files disappear after poweroff.'
         ;;
 esac
+ifconfig lo 127.0.0.1 up || fail loopback
+if [ -d /sys/class/net/eth0 ]; then
+    ifconfig eth0 up || fail 'network interface'
+    udhcpc -i eth0 -s /usr/share/udhcpc/default.script -n -q -f -t 5 -T 2 || fail dhcp
+    echo 'NETWORK_READY'
+else
+    echo 'Network disabled (start QEMU with --net to enable it).'
+fi
 echo 'Booting NekoOS - development console'
 echo 'Type neko-help for example commands.'
 echo 'SYSTEM_READY'

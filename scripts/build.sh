@@ -51,6 +51,7 @@ mkdir -p "$kout" "$bout"
 make -C "$kernel" O="$kout" ARCH=x86_64 \
     KCONFIG_ALLCONFIG="$root/kernel/configs/x86_64.config" allnoconfig
 for option in CONFIG_SMP CONFIG_X86_LOCAL_APIC CONFIG_X86_IO_APIC CONFIG_ACPI \
+    CONFIG_NET CONFIG_PACKET CONFIG_UNIX CONFIG_INET CONFIG_VIRTIO_NET \
     CONFIG_BLK_DEV CONFIG_VIRTIO_PCI CONFIG_VIRTIO_BLK CONFIG_EXT4_FS; do
     grep -Fqx "$option=y" "$kout/.config" || die "Kernel option $option was not enabled."
 done

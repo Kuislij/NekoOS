@@ -10,10 +10,16 @@ NekoOS использует upstream Linux, собственные настро�
 извлечение → Linux/BusyBox/musl/TinyCC build → rootfs staging → cpio.gz → QEMU
 → serial log.
 При обычном запуске QEMU также подключает `out/disks/state.img` как virtio-blk.
+С флагом `--net` он подключает virtio-net к своей пользовательской сети:
+BusyBox `udhcpc` получает адрес, гостевой DHCP-hook настраивает интерфейс,
+маршрут и `/etc/resolv.conf`. Без флага виртуальная карта отсутствует;
+loopback работает в обоих режимах.
 
 Bash управляет короткими этапами, Make собирает upstream-компоненты,
-Python 3 используется только на хосте для автоматизации теста. В госте
-Python нет. Ninja пока нужен только для проверки будущего host toolchain.
+Python 3 используется только на хосте для автоматизации теста. Сетевой тест
+поднимает локальный HTTP-сервер в WSL и проверяет запрос из гостя без
+обращения к внешним сайтам. В госте Python нет. Ninja пока нужен только для
+проверки будущего host toolchain.
 
 В госте `/init` монтирует proc/sys/devtmpfs/devpts/tmpfs. При запуске с диском
 он монтирует ext4 в `/state` и привязывает его каталоги к `/root`, `/home`
@@ -44,7 +50,7 @@ virtio-blk. `/init` монтирует ext4. `neko-boot-status` проверяе
 | `configs/` | Закреплённые источники и выбор applets BusyBox |
 | `kernel/configs/` | Конфигурация x86_64 Linux |
 | `boot/grub/` | Меню BIOS-загрузки с ISO |
-| `rootfs/` | Исходные `/init`, `/etc` и гостевые команды; README не включается в образ |
+| `rootfs/` | Исходные `/init`, `/etc`, DHCP-hook и гостевые команды; README не включается в образ |
 | `scripts/`, `tools/` | Сборка, запуск, проверки |
 | `keys/` | Закреплённый публичный ключ подписи Linux |
 | `docs/adr/` | Архитектурные решения |
