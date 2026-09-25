@@ -16,7 +16,8 @@ fetch() {
     local url="$1" hash="$2" archive="$root/cache/sources/${1##*/}"
     if [[ ! -f "$archive" ]]; then
         curl --fail --location --proto '=https' --proto-redir '=https' \
-            --retry 3 --connect-timeout 30 -o "$archive.part" "$url"
+            --retry 3 --retry-all-errors --retry-delay 2 \
+            --connect-timeout 30 -o "$archive.part" "$url"
         printf '%s  %s\n' "$hash" "$archive.part" | sha256sum -c -
         mv -- "$archive.part" "$archive"
     fi
@@ -33,9 +34,14 @@ extract() {
 }
 fetch "$LINUX_URL" "$LINUX_SHA256"
 fetch "$BUSYBOX_URL" "$BUSYBOX_SHA256"
+fetch "$MUSL_URL" "$MUSL_SHA256"
+fetch "$TCC_URL" "$TCC_SHA256"
 bash "$root/scripts/verify-kernel.sh"
+bash "$root/scripts/verify-musl.sh"
 extract "$root/cache/sources/${LINUX_URL##*/}" "linux-$LINUX_VERSION"
 extract "$root/cache/sources/${BUSYBOX_URL##*/}" "busybox-$BUSYBOX_VERSION"
+extract "$root/cache/sources/${MUSL_URL##*/}" "musl-$MUSL_VERSION"
+extract "$root/cache/sources/${TCC_URL##*/}" "tcc-$TCC_VERSION"
 kernel="$root/build/sources/linux-$LINUX_VERSION"
 busybox="$root/build/sources/busybox-$BUSYBOX_VERSION"
 kout="$root/build/linux-$LINUX_VERSION"
@@ -60,6 +66,7 @@ done < "$root/configs/busybox.config"
 make -C "$busybox" O="$bout" oldconfig < <(yes '')
 make -C "$busybox" O="$bout" -j"$jobs"
 if readelf -l "$bout/busybox" | grep -q INTERP; then die 'BusyBox must be statically linked.'; fi
+bash "$root/scripts/toolchain.sh"
 fakeroot bash "$root/scripts/image.sh" "$bout/busybox"
 install -m 644 "$kout/arch/x86/boot/bzImage" "$root/out/images/bzImage.new"
 mv "$root/out/images/bzImage.new" "$root/out/images/bzImage"

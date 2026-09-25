@@ -6,7 +6,7 @@ source "$(dirname -- "${BASH_SOURCE[0]}")/common.sh"
 stage="$root/build/rootfs"
 # Exact generated path under the verified build directory; never accept a caller path.
 rm -rf -- "$stage"
-mkdir -p "$stage"/{dev/pts,etc,home,media,mnt,opt,proc,root,run/lock,state,sys,tmp,usr/bin,usr/lib,usr/lib64,usr/local/bin,usr/local/lib,usr/local/sbin,usr/sbin,usr/share,var/cache,var/lib,var/log,var/tmp}
+mkdir -p "$stage"/{dev/pts,etc,home,media,mnt,opt,proc,root,run/lock,state,sys,tmp,usr/bin,usr/include,usr/lib,usr/lib64,usr/local/bin,usr/local/lib,usr/local/sbin,usr/sbin,usr/share/nekoos/examples,var/cache,var/lib,var/log,var/tmp}
 # One copy of each program lives under /usr. Classic paths remain available.
 ln -s usr/bin "$stage/bin"
 ln -s usr/sbin "$stage/sbin"
@@ -15,6 +15,13 @@ ln -s usr/lib64 "$stage/lib64"
 ln -s ../run "$stage/var/run"
 ln -s ../run/lock "$stage/var/lock"
 install -m 755 "$1" "$stage/usr/bin/busybox"
+toolchain="$root/build/toolchain-root"
+[[ -x "$toolchain/usr/bin/tcc" ]] || die 'C toolchain is missing.'
+cp -a "$toolchain/usr/include/." "$stage/usr/include/"
+cp -a "$toolchain/usr/lib/." "$stage/usr/lib/"
+cp -a "$toolchain/lib/ld-musl-x86_64.so.1" "$stage/usr/lib/ld-musl-x86_64.so.1"
+install -m 755 "$toolchain/usr/bin/tcc" "$stage/usr/bin/tcc"
+ln -s tcc "$stage/usr/bin/cc"
 "$1" --list > "$root/build/busybox-applets.txt"
 while IFS= read -r applet; do
     [[ "$applet" == busybox ]] || ln -s busybox "$stage/usr/bin/$applet"
@@ -27,6 +34,8 @@ for applet in init halt poweroff reboot; do
 done
 install -m 755 "$root/rootfs/usr/bin/neko-help" "$stage/usr/bin/neko-help"
 install -m 755 "$root/rootfs/usr/bin/neko-shell" "$stage/usr/bin/neko-shell"
+install -m 644 "$root/rootfs/usr/share/nekoos/examples/hello.c" \
+    "$stage/usr/share/nekoos/examples/hello.c"
 install -m 755 "$root/rootfs/init" "$stage/init"
 install -m 644 "$root/rootfs/etc/"* "$stage/etc/"
 chmod 1777 "$stage/tmp"

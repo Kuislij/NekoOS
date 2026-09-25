@@ -7,7 +7,8 @@ NekoOS использует upstream Linux, собственные настро�
 ## Текущий цикл
 
 `configs/sources.sh` → HTTPS download/cache → SHA256 → подпись Linux →
-извлечение → Linux/BusyBox build → rootfs staging → cpio.gz → QEMU → serial log.
+извлечение → Linux/BusyBox/musl/TinyCC build → rootfs staging → cpio.gz → QEMU
+→ serial log.
 При обычном запуске QEMU также подключает `out/disks/state.img` как virtio-blk.
 
 Bash управляет короткими этапами, Make собирает upstream-компоненты,
@@ -25,8 +26,10 @@ Rootfs хранит программы в `/usr/bin` и `/usr/sbin`; класс�
 `/sbin`, `/lib`, `/lib64` ссылаются на соответствующие папки в `/usr`.
 Правила каталогов описаны в [filesystem.md](filesystem.md).
 
-BusyBox статически связан с host glibc. Это bootstrap-компромисс, а не
-окончательный выбор libc. Загрузчик пока не требуется: QEMU принимает ядро
+BusyBox пока статически связан с host glibc. TinyCC тоже статически связан
+для запуска в госте, а программы, собранные им, используют musl.
+Это переходный этап: BusyBox и компилятор ещё не используют одну libc.
+Загрузчик пока не требуется: QEMU принимает ядро
 и initramfs напрямую. Диск с данными появился; постоянный системный rootfs,
 installer и ISO ещё отсутствуют.
 
@@ -43,7 +46,8 @@ installer и ISO ещё отсутствуют.
 | `packages/` | Место для будущих собственных recipes |
 | `cache/sources/` | Upstream-архивы и подпись |
 | `build/sources/` | Извлечённые исходники |
-| `build/linux-*`, `build/busybox-*` | Результаты компиляции |
+| `build/linux-*`, `build/busybox-*` | Результаты компиляции ядра и BusyBox |
+| `build/toolchain-root/` | Промежуточная установка заголовков, musl и TinyCC |
 | `build/rootfs/` | Генерируемое дерево; пересоздаётся при сборке |
 | `build/logs/` | Сборочные и serial logs |
 | `out/images/` | Ядро, initramfs, конфигурации и hashes |
@@ -59,4 +63,4 @@ Go упрощает разработку, но требует отдельног
 ручного контроля памяти; Python добавляет runtime в guest. Выбор будет
 сделан перед MVP. Формат пакетов, libc, постоянный rootfs и система сервисов
 пока не зафиксированы. См. ADR-002 о границах минимальной загрузки, ADR-003
-о структуре rootfs и ADR-004 о хранилище данных.
+о структуре rootfs, ADR-004 о хранилище данных и ADR-005 о C toolchain.

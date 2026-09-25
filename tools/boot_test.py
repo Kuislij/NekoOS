@@ -74,8 +74,14 @@ def boot(args):
                         b"test -c /dev/console && test -c /dev/pts/ptmx && "
                         b"echo neko-test > /tmp/smoke && "
                         b"test \"$(cat /tmp/smoke)\" = neko-test && "
+                        b"printf '%s\\n' '#include <stdio.h>' "
+                        b"'int main(void) { puts(\"C_\" \"READY\"); return 0; }' "
+                        b"> /tmp/hello.c && "
+                        b"cc /tmp/hello.c -o /tmp/hello && /tmp/hello && "
+                        b"cc /usr/share/nekoos/examples/hello.c -o /tmp/example && "
+                        b"/tmp/example && "
                         b"uname -r && cat /etc/os-release && neko-help && "
-                        b"printf '\\n%s%s\\n' 'SHELL_' 'READY' && poweroff\n"
+                        b"printf '\\n%s%s\\n' 'SHELL_' 'READY' && poweroff || poweroff\n"
                     )
                     process.stdin.flush()
                     sent = True
@@ -83,9 +89,9 @@ def boot(args):
                 if code is not None:
                     # Re-read after exit: the last serial output may arrive during poll.
                     lines = log.read_text(errors='replace').replace('\r', '').splitlines()
-                    if code == 0 and sent and 'SHELL_READY' in lines and any(
-                        'Power down' in line for line in lines
-                    ):
+                    if (code == 0 and sent and 'SHELL_READY' in lines
+                            and 'C_READY' in lines and 'Hello from NekoOS' in lines
+                            and any('Power down' in line for line in lines)):
                         print(f'BOOT_TEST_PASSED: init, shell, filesystems, poweroff. Log: {log}')
                         return 0
                     raise RuntimeError(f'QEMU exited with code {code} before a complete boot test')
