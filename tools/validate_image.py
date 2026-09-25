@@ -78,7 +78,7 @@ def validate(entries):
 
     for directory in (
         '', 'dev', 'dev/pts', 'etc', 'home', 'media', 'mnt', 'opt', 'proc',
-        'root', 'run', 'run/lock', 'sys', 'tmp', 'usr', 'usr/bin', 'usr/lib',
+        'root', 'run', 'run/lock', 'state', 'sys', 'tmp', 'usr', 'usr/bin', 'usr/lib',
         'usr/lib64', 'usr/local', 'usr/local/bin', 'usr/local/lib',
         'usr/local/sbin', 'usr/sbin', 'usr/share', 'var', 'var/cache',
         'var/lib', 'var/log', 'var/tmp'
@@ -92,13 +92,15 @@ def validate(entries):
     }.items():
         require(entry(path, stat.S_ISLNK, 'symlink')[1] == target,
                 f'wrong symlink target: {path}')
-    for path in ('usr/bin/busybox', 'usr/bin/neko-help', 'init'):
+    for path in ('usr/bin/busybox', 'usr/bin/neko-help', 'usr/bin/neko-shell', 'init'):
         mode = entry(path, stat.S_ISREG, 'regular file')[0]
         require(mode & 0o111, f'{path} is not executable')
     for path in ('etc/inittab', 'etc/os-release', 'etc/passwd', 'etc/group'):
         entry(path, stat.S_ISREG, 'regular file')
     require(b'ID=nekoos' in entries['etc/os-release'][1], 'wrong os-release')
-    require(b'ttyS0' in entries['etc/inittab'][1], 'serial shell missing')
+    require(b'ttyS0' in entries['etc/inittab'][1]
+            and b'neko-shell' in entries['etc/inittab'][1],
+            'serial shell missing')
     for path, major, minor in (('dev/console', 5, 1), ('dev/null', 1, 3)):
         mode, _, actual_major, actual_minor = entry(path, stat.S_ISCHR, 'device')
         require((actual_major, actual_minor) == (major, minor),

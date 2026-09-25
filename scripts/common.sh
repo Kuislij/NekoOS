@@ -11,7 +11,7 @@ if [[ -z "${FAKEROOTKEY:-}" ]]; then
     (( EUID != 0 )) || die 'Build and run as a regular user; root is only for host dependency installation.'
 fi
 [[ "$root" != /mnt/* ]] || die 'Build in the Linux filesystem (for example ~/src/NekoOS), not /mnt/.'
-for directory in build build/logs build/sources build/gnupg cache cache/sources out out/images; do
+for directory in build build/logs build/sources build/gnupg cache cache/sources out out/images out/disks; do
     [[ ! -L "$root/$directory" ]] || die "$directory must not be a symlink."
     mkdir -p "$root/$directory"
 done

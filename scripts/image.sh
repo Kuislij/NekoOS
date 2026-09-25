@@ -6,7 +6,7 @@ source "$(dirname -- "${BASH_SOURCE[0]}")/common.sh"
 stage="$root/build/rootfs"
 # Exact generated path under the verified build directory; never accept a caller path.
 rm -rf -- "$stage"
-mkdir -p "$stage"/{dev/pts,etc,home,media,mnt,opt,proc,root,run/lock,sys,tmp,usr/bin,usr/lib,usr/lib64,usr/local/bin,usr/local/lib,usr/local/sbin,usr/sbin,usr/share,var/cache,var/lib,var/log,var/tmp}
+mkdir -p "$stage"/{dev/pts,etc,home,media,mnt,opt,proc,root,run/lock,state,sys,tmp,usr/bin,usr/lib,usr/lib64,usr/local/bin,usr/local/lib,usr/local/sbin,usr/sbin,usr/share,var/cache,var/lib,var/log,var/tmp}
 # One copy of each program lives under /usr. Classic paths remain available.
 ln -s usr/bin "$stage/bin"
 ln -s usr/sbin "$stage/sbin"
@@ -26,6 +26,7 @@ for applet in init halt poweroff reboot; do
     ln -s ../bin/busybox "$stage/usr/sbin/$applet"
 done
 install -m 755 "$root/rootfs/usr/bin/neko-help" "$stage/usr/bin/neko-help"
+install -m 755 "$root/rootfs/usr/bin/neko-shell" "$stage/usr/bin/neko-shell"
 install -m 755 "$root/rootfs/init" "$stage/init"
 install -m 644 "$root/rootfs/etc/"* "$stage/etc/"
 chmod 1777 "$stage/tmp"

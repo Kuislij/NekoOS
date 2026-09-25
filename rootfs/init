@@ -15,7 +15,27 @@ mount -t devpts devpts /dev/pts || fail devpts
 mount -t tmpfs -o mode=1777 tmpfs /tmp || fail tmp
 mount -t tmpfs tmpfs /run || fail run
 mkdir -p /run/lock || fail run-lock
+case " $(cat /proc/cmdline) " in
+    *' neko.state=required '*)
+        for attempt in 1 2 3 4 5 6 7 8 9 10; do
+            [ -b /dev/vda ] && break
+            /bin/sleep 1
+        done
+        [ -b /dev/vda ] || fail 'virtual data disk not found'
+        mount -t ext4 -o noatime /dev/vda /state || fail 'virtual data disk mount'
+        mkdir -p /state/home /state/root /state/var-lib || fail 'data directories'
+        chmod 700 /state/root || fail 'private root home'
+        mount --bind /state/home /home || fail 'persistent /home'
+        mount --bind /state/root /root || fail 'persistent /root'
+        mount --bind /state/var-lib /var/lib || fail 'persistent /var/lib'
+        echo 'PERSISTENCE_READY'
+        echo 'Files in /root and /home are saved between boots.'
+        ;;
+    *)
+        echo 'Temporary session: files disappear after poweroff.'
+        ;;
+esac
 echo 'Booting NekoOS - development console'
-echo 'Type neko-help for example commands. Changes disappear after poweroff.'
+echo 'Type neko-help for example commands.'
 echo 'SYSTEM_READY'
 exec /sbin/init

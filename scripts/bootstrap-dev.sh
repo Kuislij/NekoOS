@@ -20,13 +20,15 @@ case "${1:-}" in
         if (( EUID != 0 )); then elevate=(sudo); fi
         "${elevate[@]}" apt-get update
         "${elevate[@]}" apt-get install -y build-essential ninja-build git qemu-system-x86 \
+            qemu-utils e2fsprogs \
             curl ca-certificates xz-utils bzip2 cpio fakeroot bc bison flex \
             libssl-dev libelf-dev python3 rsync gnupg
         ;;
     *) echo 'Usage: bootstrap-dev.sh [--install]' >&2; exit 2 ;;
 esac
 missing=0
-for tool in gcc make ninja git qemu-system-x86_64 timeout tee curl xz bzip2 \
+for tool in gcc make ninja git qemu-system-x86_64 qemu-img mkfs.ext4 blkid \
+    timeout tee curl xz bzip2 \
     cpio fakeroot bc bison flex python3 sha256sum gzip readelf flock gpg gpgv; do
     if command -v "$tool" >/dev/null 2>&1; then
         printf '[OK] %s\n' "$tool"
