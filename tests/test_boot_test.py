@@ -42,6 +42,7 @@ class BootHarnessTests(unittest.TestCase):
 
     def test_timeout_reaps_the_child_process(self):
         original_popen = subprocess.Popen
+        original_run = subprocess.run
         children = []
 
         def launch(command, **kwargs):
@@ -52,7 +53,13 @@ class BootHarnessTests(unittest.TestCase):
                 return child
             return original_popen(command, **kwargs)
 
-        with patch.object(boot_test.subprocess, 'Popen', side_effect=launch):
+        def run(command, **kwargs):
+            if command[0] == sys.executable:
+                return subprocess.CompletedProcess(command, 0)
+            return original_run(command, **kwargs)
+
+        with patch.object(boot_test.subprocess, 'Popen', side_effect=launch), \
+             patch.object(boot_test.subprocess, 'run', side_effect=run):
             with self.assertRaisesRegex(RuntimeError, 'did not complete'):
                 boot_test.boot(argparse.Namespace(no_build=True, timeout=0.2))
         self.assertEqual(len(children), 1)

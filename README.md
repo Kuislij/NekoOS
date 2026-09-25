@@ -32,7 +32,9 @@ wsl -d Ubuntu -u neko --cd /home/neko/src/NekoOS
 
 Затем `bash os run`. Выход из QEMU: **Ctrl+A, затем X**; штатное выключение
 гостя: `poweroff`. Команды `uname -r`, `cat /etc/os-release`, `ls /` работают
-в гостевой консоли. Сетевая карта, физические диски и общие папки к VM не подключены.
+в гостевой консоли. Когда появится `neko#`, введите `neko-help`: система покажет
+несколько примеров простых команд. Сетевая карта, физические диски и общие
+папки к VM не подключены.
 
 ## Команды
 
@@ -41,19 +43,24 @@ wsl -d Ubuntu -u neko --cd /home/neko/src/NekoOS
 | `bash os doctor` | Проверка доступности инструментов |
 | `bash os check` | Два теста компилятора, Make/Ninja и старта QEMU |
 | `bash os build` | Проверка исходников, сборка ядра, BusyBox, initramfs |
-| `bash os run` | Инкрементальная сборка и интерактивная serial console |
+| `bash os run` | Сборка и консоль с коротким выводом загрузки |
+| `bash os run --verbose` | Сборка и полный вывод ядра при загрузке |
 | `bash os test` | Сборка и автоматический тест гостя |
 | `bash os test --no-build` | Тест уже собранных файлов с проверкой их SHA256 |
 
 Результаты: `out/images/bzImage`, `initramfs.cpio.gz`, конфигурации и
 `SHA256SUMS`. Логи: `build/logs/build.log`, `serial.log`, `boot-test.log`,
-`check-dev.log`. Эти файлы, сборки и кэш исключены из Git.
+`check-dev.log`. Полный вывод сборки при `os run` также находится в
+`run-build.log`. Эти файлы, сборки и кэш исключены из Git.
 
-Тест загрузки ждёт `SYSTEM_READY`, выполняет команды в shell, проверяет
-файловые системы и запись в `/tmp`, затем требует успешное выключение.
+Перед загрузкой проверяется содержимое initramfs. Тест ждёт `SYSTEM_READY`,
+выполняет команды в shell, проверяет файловые системы, каталоги и запись
+в `/tmp`, затем требует успешное выключение.
 При успехе выводит `BOOT_TEST_PASSED`; таймаут или ошибка дают ненулевой код.
 
-[Среда и проверки](docs/development.md) · [Архитектура](docs/architecture.md) ·
+[Среда и проверки](docs/development.md) · [Файловая система](docs/filesystem.md) ·
+[Архитектура](docs/architecture.md) ·
 [План](docs/roadmap.md) · [Безопасность](docs/security.md) · [Лицензии](docs/licenses.md)
 
 [Результаты проверок этапов 1–2](docs/validation-2026-09-23.md).
+[Результаты проверки этапа 3](docs/validation-2026-09-25.md).

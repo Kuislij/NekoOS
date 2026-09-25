@@ -14,6 +14,8 @@ mkdir -p /dev/pts
 mount -t devpts devpts /dev/pts || fail devpts
 mount -t tmpfs -o mode=1777 tmpfs /tmp || fail tmp
 mount -t tmpfs tmpfs /run || fail run
+mkdir -p /run/lock || fail run-lock
 echo 'Booting NekoOS - development console'
+echo 'Type neko-help for example commands. Changes disappear after poweroff.'
 echo 'SYSTEM_READY'
 exec /sbin/init

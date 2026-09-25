@@ -34,6 +34,8 @@ def boot(args):
         subprocess.run(['bash', str(ROOT / 'scripts/build.sh')], check=True)
     images = ROOT / 'out/images'
     subprocess.run(['sha256sum', '-c', 'SHA256SUMS'], cwd=images, check=True)
+    subprocess.run([sys.executable, str(ROOT / 'tools/validate_image.py'),
+                    str(images / 'initramfs.cpio.gz')], check=True)
     log = ROOT / 'build/logs/boot-test.log'
     log.parent.mkdir(parents=True, exist_ok=True)
     command = [
@@ -50,18 +52,26 @@ def boot(args):
                                    stderr=subprocess.STDOUT)
         try:
             deadline = time.monotonic() + args.timeout
+            sent_exit = False
             sent = False
             while time.monotonic() < deadline:
                 content = log.read_text(errors='replace')
                 lines = content.replace('\r', '').splitlines()
-                if 'SYSTEM_READY' in lines and not sent:
+                shells_started = content.count('built-in shell (ash)')
+                if 'SYSTEM_READY' in lines and shells_started >= 1 and not sent_exit:
+                    process.stdin.write(b'exit\n')
+                    process.stdin.flush()
+                    sent_exit = True
+                if sent_exit and shells_started >= 2 and not sent:
                     # Split the marker so terminal echo cannot count as a passing test.
                     process.stdin.write(
+                        b"test -L /bin && test -x /usr/bin/busybox && "
+                        b"test -d /var/lib && test -d /usr/local/bin && "
                         b"test -r /proc/version && test -d /sys/kernel && "
                         b"test -c /dev/console && test -c /dev/pts/ptmx && "
                         b"echo neko-test > /tmp/smoke && "
                         b"test \"$(cat /tmp/smoke)\" = neko-test && "
-                        b"uname -r && cat /etc/os-release && "
+                        b"uname -r && cat /etc/os-release && neko-help && "
                         b"printf '\\n%s%s\\n' 'SHELL_' 'READY' && poweroff\n"
                     )
                     process.stdin.flush()

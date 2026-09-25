@@ -35,6 +35,10 @@ wsl -d Ubuntu -u root -- bash /home/neko/src/NekoOS/scripts/bootstrap-dev.sh --i
 
 Этап 2: `bash os test` проверяет реальные `bzImage` и `initramfs`, ждёт init,
 выполняет команды в ash, проверяет proc/sys/dev/devpts/tmp и выключение VM.
+После этапа 3 тот же тест проверяет структуру cpio, права и устройства,
+повторный запуск shell после `exit`, ссылки `/bin` → `/usr/bin` и работу
+команды `neko-help`. Для интерактивного запуска `bash os run` сокращает
+вывод ядра; `bash os run --verbose` оставляет полный вывод.
 Запуск ограничен 90 секундами; другой срок: `bash os test --timeout 120`.
 Проверка `--no-build` сначала сверяет SHA256 образов. Параллельные сборки и
 параллельные boot-тесты блокируются, чтобы не смешивать результаты.
