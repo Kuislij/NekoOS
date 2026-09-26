@@ -17,7 +17,7 @@ for option in "$@"; do
     esac
 done
 [[ "$boot" != iso || "$mode" != ram ]] || die 'ISO boot currently requires the persistent virtual disk.'
-[[ "$system" != on || ( "$mode" == disk && "$boot" == direct ) ]] || die '--system requires a disk and direct kernel boot.'
+[[ "$system" != on || "$mode" == disk ]] || die '--system requires a virtual disk.'
 mkdir -p "$root/build/logs"
 echo 'Сборка NekoOS; подробный вывод: build/logs/build.log'
 if ! bash "$root/scripts/build.sh" > "$root/build/logs/run-build.log" 2>&1; then
@@ -51,12 +51,18 @@ if [[ "$system" == on ]]; then
     echo 'Системный раздел на отдельном виртуальном диске; /etc и /usr сохраняются.'
 fi
 if [[ "$boot" == iso ]]; then
-    bash "$root/scripts/create-iso.sh" > "$root/build/logs/iso.log" 2>&1 || {
+    iso_args=()
+    iso_name=NekoOS.iso
+    if [[ "$system" == on ]]; then
+        iso_args=(--system)
+        iso_name=NekoOS-system.iso
+    fi
+    bash "$root/scripts/create-iso.sh" "${iso_args[@]}" > "$root/build/logs/iso.log" 2>&1 || {
         tail -n 35 "$root/build/logs/iso.log" >&2
         die 'Could not create bootable ISO. See build/logs/iso.log.'
     }
-    boot_args=(-drive "file=$root/out/images/NekoOS.iso,media=cdrom,if=ide" -boot order=d)
-    echo 'Запуск через виртуальный BIOS и GRUB (образ out/images/NekoOS.iso).'
+    boot_args=(-drive "file=$root/out/images/$iso_name,media=cdrom,if=ide" -boot order=d)
+    echo "Запуск через виртуальный BIOS и GRUB (образ out/images/$iso_name)."
 else
     boot_args+=(-append "$append")
 fi

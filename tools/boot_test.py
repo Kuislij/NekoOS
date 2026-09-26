@@ -28,7 +28,7 @@ def main():
     args = parser.parse_args()
     if args.timeout < 1:
         parser.error('--timeout must be positive')
-    if args.iso:
+    if args.iso and not args.system:
         args.disk = True
     if args.net and args.disk:
         parser.error('--net test uses a temporary VM; do not combine it with --disk or --iso')
@@ -36,7 +36,7 @@ def main():
         parser.error('--package cannot be combined with --disk, --iso or --net')
     if args.services and (args.disk or args.iso or args.net or args.package):
         parser.error('--services cannot be combined with other test modes')
-    if args.system and (args.disk or args.iso or args.net or args.package or args.services):
+    if args.system and (args.disk or args.net or args.package or args.services):
         parser.error('--system cannot be combined with other test modes')
     if sys.platform != 'linux' or os.geteuid() == 0:
         parser.error('run as a regular Linux / WSL2 user')
@@ -460,6 +460,12 @@ def boot_system(args):
     subprocess.run(['sha256sum', '-c', 'SHA256SUMS'], cwd=images, check=True)
     subprocess.run([sys.executable, str(ROOT / 'tools/validate_image.py'),
                     str(images / 'initramfs.cpio.gz')], check=True)
+    if args.iso:
+        if not args.no_build:
+            subprocess.run(['bash', str(ROOT / 'scripts/create-iso.sh'), '--system'],
+                           check=True)
+        subprocess.run(['sha256sum', '-c', 'SYSTEM_ISO_SHA256SUMS'],
+                       cwd=images, check=True)
     first = (
         "grep -q ' / ext4 ' /proc/mounts && "
         "test -b /dev/vda && test -b /dev/vdb && "
@@ -486,13 +492,18 @@ def boot_system(args):
         for number, command, marker in ((1, first, 'SYSTEM_WRITTEN'),
                                         (2, second, 'SYSTEM_PERSISTED')):
             run_disk_guest(images, state_disk, command, marker, number, args.timeout,
-                           False, log_prefix='system', network=True,
+                           args.iso, log_prefix='iso-system' if args.iso else 'system',
+                           network=True,
                            system_disk=system_disk)
-            log = (ROOT / 'build/logs' / f'system-test-{number}.log').read_text(
+            prefix = 'iso-system' if args.iso else 'system'
+            log = (ROOT / 'build/logs' / f'{prefix}-test-{number}.log').read_text(
                 errors='replace')
             if 'NETWORK_READY' not in log:
                 raise RuntimeError('Network did not start from the system disk')
-    print('SYSTEM_TEST_PASSED: disk root and both filesystems survived poweroff')
+            if args.iso and 'NEKO_BOOTLOADER_SYSTEM_READY' not in log:
+                raise RuntimeError('GRUB did not select the system disk entry')
+    print(('ISO_SYSTEM_TEST_PASSED' if args.iso else 'SYSTEM_TEST_PASSED')
+          + ': disk root and both filesystems survived poweroff')
     return 0
 
 
@@ -512,7 +523,8 @@ def run_disk_guest(images, disk, guest_command, marker, pass_number, timeout, is
         command += ['-drive', f'file={system_disk},format=raw,if=virtio']
     command += ['-drive', f'file={disk},format=raw,if=virtio']
     if iso:
-        command += ['-drive', f'file={images / "NekoOS.iso"},media=cdrom,if=ide',
+        iso_name = 'NekoOS-system.iso' if system_disk is not None else 'NekoOS.iso'
+        command += ['-drive', f'file={images / iso_name},media=cdrom,if=ide',
                     '-boot', 'order=d']
         hardware_check = (b'neko-boot-status && '
                           b'test "$(cat /sys/devices/system/cpu/online)" = 0-1 && ')

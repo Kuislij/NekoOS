@@ -13,9 +13,18 @@ echo 'ACPI DSDT: available'
 echo 'Interrupt controller: active'
 case " $(cat /proc/cmdline) " in
     *' neko.state=required '*)
-        [ -b /dev/vda ] || fail virtio-block
-        grep -q '^/dev/vda /state ext4 ' /proc/mounts || fail ext4
-        echo 'Virtual storage: /dev/vda mounted as ext4 at /state'
+        state_device=/dev/vda
+        case " $(cat /proc/cmdline) " in
+            *' neko.system=required '*)
+                [ -b /dev/vda ] || fail system-disk
+                grep -q '^/dev/vda / ext4 ' /proc/mounts || fail system-root
+                echo 'System root: /dev/vda mounted as ext4 at /'
+                state_device=/dev/vdb
+                ;;
+        esac
+        [ -b "$state_device" ] || fail virtio-block
+        grep -q "^$state_device /state ext4 " /proc/mounts || fail ext4
+        echo "Virtual storage: $state_device mounted as ext4 at /state"
         ;;
     *) echo 'Virtual storage: temporary RAM session' ;;
 esac

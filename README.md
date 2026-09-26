@@ -82,7 +82,8 @@ poweroff
 перезаписывает существующий `system.img`**. Поэтому изменения исходного кода
 пока не обновляют уже созданный системный диск автоматически. Сохраните его
 копию перед ручным пересозданием; механизм обновления и переноса настроек —
-следующий этап. Режим `--system` пока нельзя сочетать с `--ram` и `--iso`.
+следующий этап. Режим `--system` нельзя сочетать с `--ram`; через BIOS и GRUB
+он запускается командой `bash os run --iso --system`.
 
 ### Локальные программы и службы
 
@@ -201,8 +202,20 @@ bash os run --iso
 `bash os run --iso` сам пересобирает ядро и ISO; `bash os iso` использует уже
 собранные файлы. В консоли `neko#` команда `neko-boot-status` показывает,
 обнаружены ли процессоры, RAM, прерывания, таблицы ACPI, виртуальный диск и
-ext4. ISO предназначен для виртуального BIOS в QEMU и загружается с отдельным
-диском `state.img`; это пока не установочный образ и не образ для UEFI.
+ext4. Обычный ISO загружает систему из initramfs. Для полного пути
+BIOS → GRUB → системный диск используйте:
+
+```bash
+bash os iso --system
+bash os test --iso --system --no-build
+bash os run --iso --system
+```
+
+Второй образ `NekoOS-system.iso` выбирает пункт системного диска по умолчанию.
+В режиме `--system` команды берутся из существующего `system.img`; новый ISO
+сам по себе не обновляет программы на этом диске.
+Оба ISO предназначены для виртуального BIOS в QEMU; это пока не установочные
+образы и не образы для UEFI.
 Физические диски компьютера не используются.
 
 ### Программа на C внутри NekoOS
@@ -244,15 +257,18 @@ musl. Файлы `hello.c` и `hello` останутся в `/root` после `
 | `bash os image` | Создать виртуальный диск, если его ещё нет; существующие файлы не стирает |
 | `bash os system-image` | Создать системный диск из текущей сборки, если его ещё нет |
 | `bash os iso` | Создать загрузочный BIOS ISO из уже собранных ядра и initramfs |
+| `bash os iso --system` | Создать BIOS ISO с системным диском как пунктом по умолчанию |
 | `bash os run` | Сборка и консоль с сохранением файлов |
 | `bash os run --system` | Загрузиться с сохраняемого системного ext4-диска |
 | `bash os run --iso` | Сборка и запуск через виртуальный BIOS и GRUB |
+| `bash os run --iso --system` | Загрузиться через BIOS и GRUB с системного диска |
 | `bash os run --net` | Включить виртуальную сеть, DHCP и исходящие подключения |
 | `bash os run --ram` | Временная консоль без диска; файлы исчезают после выключения |
 | `bash os run --verbose` | Сборка и полный вывод ядра при загрузке |
 | `bash os test` | Сборка и автоматический тест временной гостевой системы |
 | `bash os test --disk` | Две загрузки с проверкой сохранённого файла |
 | `bash os test --iso` | Две загрузки ISO через BIOS и GRUB, проверка оборудования и данных |
+| `bash os test --iso --system` | Две загрузки системного диска через BIOS и GRUB на временных дисках |
 | `bash os test --net` | Проверить DHCP, DNS-настройку, ICMP и HTTP в QEMU |
 | `bash os test --services` | Проверить сохранение настроек служб на отдельном временном диске |
 | `bash os test --system` | Две загрузки с отдельных временных системного и пользовательского дисков |
@@ -260,9 +276,9 @@ musl. Файлы `hello.c` и `hello` останутся в `/root` после `
 | `bash os test --no-build` | Тест уже собранных файлов с проверкой их SHA256 |
 
 Результаты: `out/images/bzImage`, `initramfs.cpio.gz`,
-`bootstrap.cpio.gz`, `system-template.img`, `NekoOS.iso`,
+`bootstrap.cpio.gz`, `system-template.img`, `NekoOS.iso`, `NekoOS-system.iso`,
 конфигурации и контрольные суммы. Логи: `build/logs/build.log`, `serial.log`,
-`boot-test.log`, `disk-test-*.log`, `iso-test-*.log`, `network-test.log`,
+`boot-test.log`, `disk-test-*.log`, `iso-test-*.log`, `iso-system-test-*.log`, `network-test.log`,
 `services-test-*.log`, `system-test-*.log`, `package-test-*.log`, `check-dev.log`.
 Полный вывод сборки
 при `os run` также находится в `run-build.log`. Сборки, кэш, логи и
@@ -288,6 +304,7 @@ musl. Файлы `hello.c` и `hello` останутся в `/root` после `
 [Проверка локальных программ и служб](docs/validation-services-2026-09-25.md).
 [Проверка сохраняемых служб](docs/validation-persistent-services-2026-09-26.md).
 [Проверка системного диска](docs/validation-system-disk-2026-09-26.md).
+[Проверка BIOS-загрузки с системного диска](docs/validation-iso-system-2026-09-26.md).
 [Проверка единой musl в базовой системе](docs/validation-musl-2026-09-26.md).
 [Проверка первого формата пакетов](docs/validation-packages-2026-09-26.md).
 [Проверка зависимостей и обновления](docs/validation-package-upgrades-2026-09-26.md).
