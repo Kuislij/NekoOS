@@ -1,0 +1,201 @@
+#!/bin/sh
+# NekoPkg/1 installs one verified executable into the persistent /usr/local.
+set -eu
+base=/usr/local/lib/neko-pkg
+store=$base/store
+bin=/usr/local/bin
+stage=
+
+die() { echo "neko-pkg: $*" >&2; exit 1; }
+usage() {
+    echo 'Usage: neko-pkg {list|info FILE.npkg|info NAME|install FILE.npkg|verify NAME|remove NAME}'
+}
+valid_name() {
+    [ "${#1}" -le 64 ] || return 1
+    case "$1" in [a-z]*) ;; *) return 1 ;; esac
+    case "$1" in *[!a-z0-9-]*) return 1 ;; esac
+}
+parse_manifest() {
+    [ -f "$1" ] && [ ! -L "$1" ] || return 1
+    line_no=0
+    pkg_name= pkg_version= pkg_license= pkg_size= pkg_sha=
+    while IFS= read -r line || [ -n "$line" ]; do
+        line_no=$((line_no + 1))
+        case "$line_no" in
+            1) [ "$line" = NEKOPKG/1 ] || return 1 ;;
+            2) case "$line" in name=*) pkg_name=${line#name=} ;; *) return 1 ;; esac ;;
+            3) case "$line" in version=*) pkg_version=${line#version=} ;; *) return 1 ;; esac ;;
+            4) [ "$line" = arch=x86_64 ] || return 1 ;;
+            5) case "$line" in license=*) pkg_license=${line#license=} ;; *) return 1 ;; esac ;;
+            6) [ "$line" = depends=none ] || return 1 ;;
+            7) [ "$line" = "path=/usr/local/bin/$pkg_name" ] || return 1 ;;
+            8) case "$line" in size=*) pkg_size=${line#size=} ;; *) return 1 ;; esac ;;
+            9) case "$line" in sha256=*) pkg_sha=${line#sha256=} ;; *) return 1 ;; esac ;;
+            *) return 1 ;;
+        esac
+    done < "$1"
+    [ "$line_no" -eq 9 ] && valid_name "$pkg_name" || return 1
+    [ "${#pkg_version}" -le 64 ] || return 1
+    case "$pkg_version" in [0-9]*) ;; *) return 1 ;; esac
+    case "$pkg_version" in *[!A-Za-z0-9.+-]*) return 1 ;; esac
+    [ "${#pkg_license}" -le 64 ] || return 1
+    case "$pkg_license" in [A-Za-z0-9]*) ;; *) return 1 ;; esac
+    case "$pkg_license" in *[!A-Za-z0-9.+-]*) return 1 ;; esac
+    case "$pkg_size" in ''|0*|*[!0-9]*) return 1 ;; esac
+    [ "${#pkg_size}" -le 8 ] && [ "$pkg_size" -le 16777216 ] || return 1
+    [ "${#pkg_sha}" -eq 64 ] || return 1
+    case "$pkg_sha" in *[!0-9a-f]*) return 1 ;; esac
+}
+check_payload() {
+    [ -f "$1" ] && [ ! -L "$1" ] || return 1
+    actual_size=$(wc -c < "$1")
+    [ "$actual_size" -eq "$pkg_size" ] || return 1
+    hash_line=$(sha256sum "$1") || return 1
+    [ "${hash_line%% *}" = "$pkg_sha" ]
+}
+verify_archive() {
+    archive=$1 target=$2
+    [ -f "$archive" ] || return 1
+    archive_size=$(wc -c < "$archive")
+    [ "$archive_size" -le 17825792 ] || return 1
+    tar -tzf "$archive" >/dev/null 2>&1 || return 1
+    names=$(tar -tzf "$archive" 2>/dev/null | head -c 128) || return 1
+    [ "$names" = "$(printf 'manifest\npayload')" ] || return 1
+    tar -tvzf "$archive" 2>/dev/null | head -c 512 > "$target/types" || return 1
+    type_count=0
+    while IFS= read -r line; do
+        case "$line" in -*) ;; *) return 1 ;; esac
+        type_count=$((type_count + 1))
+    done < "$target/types"
+    [ "$type_count" -eq 2 ] || return 1
+    tar -xOzf "$archive" manifest 2>/dev/null | head -c 1025 > "$target/manifest" || return 1
+    [ "$(wc -c < "$target/manifest")" -le 1024 ] || return 1
+    parse_manifest "$target/manifest" || return 1
+    tar -xOzf "$archive" payload 2>/dev/null | head -c 16777217 > "$target/payload" || return 1
+    check_payload "$target/payload" || return 1
+    chmod 755 "$target/payload"
+    rm "$target/types"
+}
+require_disk() {
+    grep -q ' /state ext4 ' /proc/mounts || die 'Start NekoOS with its persistent disk (without --ram).'
+    [ ! -L "$base" ] && [ ! -L "$store" ] || die 'package store is a symlink'
+    mkdir -p "$store"
+}
+lock_store() {
+    require_disk
+    exec 9> "$base/.lock"
+    flock -x 9 || die 'cannot lock package store'
+}
+repair_store() {
+    for entry in "$store"/.stage-*; do
+        [ -e "$entry" ] || [ -L "$entry" ] || continue
+        rm -rf -- "$entry"
+    done
+    for entry in "$store"/*; do
+        [ -d "$entry" ] && [ ! -L "$entry" ] || continue
+        installed=${entry##*/}
+        valid_name "$installed" || continue
+        expected=$store/$installed/payload
+        if [ ! -L "$bin/$installed" ] ||
+           [ "$(readlink "$bin/$installed")" != "$expected" ] ||
+           [ ! -f "$entry/manifest" ] || [ ! -f "$entry/payload" ]; then
+            if [ -L "$bin/$installed" ] &&
+               [ "$(readlink "$bin/$installed")" = "$expected" ]; then
+                rm -- "$bin/$installed"
+            fi
+            rm -rf -- "$entry"
+        fi
+    done
+}
+show_info() {
+    echo "name=$pkg_name"
+    echo "version=$pkg_version"
+    echo 'arch=x86_64'
+    echo "license=$pkg_license"
+    echo 'depends=none'
+    echo "path=/usr/local/bin/$pkg_name"
+    echo "size=$pkg_size"
+    echo "sha256=$pkg_sha"
+}
+cleanup() {
+    [ -z "$stage" ] || rm -rf -- "$stage"
+}
+trap cleanup 0
+
+case "${1:-}" in
+    list)
+        [ "$#" -eq 1 ] || die 'Usage: neko-pkg list'
+        lock_store
+        repair_store
+        for entry in "$store"/*; do
+            [ -d "$entry" ] && [ ! -L "$entry" ] || continue
+            installed=${entry##*/}
+            valid_name "$installed" || continue
+            parse_manifest "$entry/manifest" || die "invalid manifest: $installed"
+            [ "$pkg_name" = "$installed" ] || die "wrong package name: $installed"
+            echo "$pkg_name $pkg_version"
+        done
+        ;;
+    info)
+        [ "$#" -eq 2 ] || die 'Usage: neko-pkg info FILE.npkg|NAME'
+        if [ -f "$2" ]; then
+            stage=/tmp/neko-pkg-$$
+            mkdir "$stage" || die 'cannot create temporary directory'
+            verify_archive "$2" "$stage" || die 'invalid package archive or checksum'
+        else
+            valid_name "$2" || die 'invalid package name'
+            lock_store
+            repair_store
+            [ -L "$bin/$2" ] || die 'package is not installed'
+            parse_manifest "$store/$2/manifest" || die 'invalid installed manifest'
+            [ "$pkg_name" = "$2" ] || die 'wrong installed package name'
+        fi
+        show_info
+        ;;
+    install)
+        [ "$#" -eq 2 ] || die 'Usage: neko-pkg install FILE.npkg'
+        package=$2
+        lock_store
+        repair_store
+        stage=$store/.stage-$$
+        mkdir "$stage" || die 'cannot create staging directory'
+        verify_archive "$package" "$stage" || die 'invalid package archive or checksum'
+        [ ! -e "$store/$pkg_name" ] && [ ! -L "$store/$pkg_name" ] || die 'package already installed'
+        [ ! -e "$bin/$pkg_name" ] && [ ! -L "$bin/$pkg_name" ] || die 'command name is already in use'
+        if command -v "$pkg_name" >/dev/null 2>&1; then
+            die 'command name is already available in PATH'
+        fi
+        mv -- "$stage" "$store/$pkg_name" || die 'cannot commit package data'
+        stage=
+        if ! ln -s "$store/$pkg_name/payload" "$bin/$pkg_name"; then
+            rm -rf -- "$store/$pkg_name"
+            die 'cannot expose package command'
+        fi
+        echo "Installed $pkg_name $pkg_version"
+        ;;
+    verify)
+        [ "$#" -eq 2 ] || die 'Usage: neko-pkg verify NAME'
+        valid_name "$2" || die 'invalid package name'
+        lock_store
+        repair_store
+        [ -L "$bin/$2" ] || die 'package is not installed'
+        parse_manifest "$store/$2/manifest" || die 'invalid installed manifest'
+        [ "$pkg_name" = "$2" ] || die 'wrong installed package name'
+        check_payload "$store/$2/payload" || die 'installed file has changed'
+        echo "Verified $pkg_name $pkg_version"
+        ;;
+    remove)
+        [ "$#" -eq 2 ] || die 'Usage: neko-pkg remove NAME'
+        valid_name "$2" || die 'invalid package name'
+        lock_store
+        repair_store
+        [ -L "$bin/$2" ] || die 'package is not installed'
+        expected=$store/$2/payload
+        [ "$(readlink "$bin/$2")" = "$expected" ] || die 'command is not owned by this package'
+        rm -- "$bin/$2" || die 'cannot remove command link'
+        rm -rf -- "$store/$2" || die 'cannot remove package data'
+        echo "Removed $2"
+        ;;
+    help|-h|--help|'') usage ;;
+    *) usage >&2; exit 2 ;;
+esac

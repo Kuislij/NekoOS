@@ -74,6 +74,29 @@ neko-service status network
 Команды `neko-service start|stop|restart network` управляют ею вручную.
 Основная часть `/usr` и `/etc` по-прежнему приходит из initramfs.
 
+### Пакеты
+
+Первый формат NekoPkg устанавливает одну команду в сохраняемый `/usr/local`.
+В консоли `neko#` попробуйте встроенный пример:
+
+```sh
+neko-pkg info /usr/share/nekoos/packages/neko-greet-0.1.0.npkg
+neko-pkg install /usr/share/nekoos/packages/neko-greet-0.1.0.npkg
+neko-greet
+neko-pkg list
+neko-pkg verify neko-greet
+neko-pkg remove neko-greet
+```
+
+Установленная команда работает и после следующего запуска. Если она уже
+установлена, повторите `neko-greet` и `neko-pkg list` без новой установки.
+Установка требует обычного запуска с виртуальным диском, не `--ram`.
+Менеджер отклоняет повреждённый архив, сверяет SHA-256 и не заменяет чужую
+команду с тем же именем. Сейчас пакет содержит один исполняемый файл;
+зависимости, обновление версии и сетевые репозитории ещё не реализованы.
+Как собрать свой пакет и добавить его в образ, описано в
+[packages/README.md](packages/README.md).
+
 ### Сеть
 
 Включите виртуальную сеть при запуске:
@@ -162,6 +185,7 @@ musl. Файлы `hello.c` и `hello` останутся в `/root` после `
 | `bash os test --disk` | Две загрузки с проверкой сохранённого файла |
 | `bash os test --iso` | Две загрузки ISO через BIOS и GRUB, проверка оборудования и данных |
 | `bash os test --net` | Проверить DHCP, DNS-настройку, ICMP и HTTP в QEMU |
+| `bash os test --package` | Проверить установку, сохранение и удаление пакета на отдельном тестовом диске |
 | `bash os test --no-build` | Тест уже собранных файлов с проверкой их SHA256 |
 
 Результаты: `out/images/bzImage`, `initramfs.cpio.gz`, `NekoOS.iso`,
@@ -191,3 +215,4 @@ musl. Файлы `hello.c` и `hello` останутся в `/root` после `
 [Проверка сети](docs/validation-network-2026-09-25.md).
 [Проверка локальных программ и служб](docs/validation-services-2026-09-25.md).
 [Проверка единой musl в базовой системе](docs/validation-musl-2026-09-26.md).
+[Проверка первого формата пакетов](docs/validation-packages-2026-09-26.md).

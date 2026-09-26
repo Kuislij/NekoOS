@@ -16,6 +16,11 @@ NekoOS 0.1 — краткая помощь
   ping -c 1 127.0.0.1     Проверить локальный сетевой стек
   neko-service list       Показать службы, запускаемые при старте
   neko-service status network  Проверить состояние сетевой службы
+  neko-pkg info /usr/share/nekoos/packages/neko-greet-0.1.0.npkg
+  neko-pkg install /usr/share/nekoos/packages/neko-greet-0.1.0.npkg
+  neko-greet              Запустить установленный пакет (нужен диск)
+  neko-pkg list           Показать установленные пакеты
+  neko-pkg remove neko-greet  Удалить пример пакета
   poweroff                Выключить виртуальную машину
 
 Файлы в /root, /home и программы в /usr/local сохраняются при запуске с диском.

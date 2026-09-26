@@ -8,6 +8,7 @@ from pathlib import Path
 import secrets
 import subprocess
 import sys
+import tempfile
 import time
 from threading import Thread
 
@@ -20,6 +21,7 @@ def main():
     parser.add_argument('--disk', action='store_true', help='verify persistence across two boots')
     parser.add_argument('--iso', action='store_true', help='boot the persistent VM through BIOS and GRUB')
     parser.add_argument('--net', action='store_true', help='verify DHCP, loopback and HTTP over virtio-net')
+    parser.add_argument('--package', action='store_true', help='install and remove a package on a disposable disk')
     parser.add_argument('--timeout', type=int, default=90, help='boot deadline in seconds')
     args = parser.parse_args()
     if args.timeout < 1:
@@ -28,10 +30,14 @@ def main():
         args.disk = True
     if args.net and args.disk:
         parser.error('--net test uses a temporary VM; do not combine it with --disk or --iso')
+    if args.package and (args.disk or args.iso or args.net):
+        parser.error('--package cannot be combined with --disk, --iso or --net')
     if sys.platform != 'linux' or os.geteuid() == 0:
         parser.error('run as a regular Linux / WSL2 user')
     (ROOT / 'build').mkdir(exist_ok=True)
-    if args.net:
+    if args.package:
+        lock_name = '.package-test.lock'
+    elif args.net:
         lock_name = '.network-test.lock'
     elif args.disk:
         lock_name = '.disk-test.lock'
@@ -42,6 +48,8 @@ def main():
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             raise RuntimeError('Another boot test is already running') from None
+        if args.package:
+            return boot_package(args)
         if args.net:
             return boot_network(args)
         if args.disk:
@@ -277,8 +285,65 @@ def boot_disk(args):
     return 0
 
 
-def run_disk_guest(images, disk, guest_command, marker, pass_number, timeout, iso):
-    log = ROOT / 'build/logs' / f'{"iso" if iso else "disk"}-test-{pass_number}.log'
+def boot_package(args):
+    if not args.no_build:
+        subprocess.run(['bash', str(ROOT / 'scripts/build.sh')], check=True)
+    images = ROOT / 'out/images'
+    subprocess.run(['sha256sum', '-c', 'SHA256SUMS'], cwd=images, check=True)
+    subprocess.run([sys.executable, str(ROOT / 'tools/validate_image.py'),
+                    str(images / 'initramfs.cpio.gz')], check=True)
+    demo = '/usr/share/nekoos/packages/neko-greet-0.1.0.npkg'
+    install = (
+        f'neko-pkg info {demo} | grep -Fqx name=neko-greet && '
+        f'head -c 64 {demo} > /tmp/broken.npkg && '
+        'if neko-pkg install /tmp/broken.npkg; then false; else true; fi && '
+        "printf personal > /usr/local/bin/neko-greet && "
+        f'if neko-pkg install {demo}; then false; else true; fi && '
+        'test "$(cat /usr/local/bin/neko-greet)" = personal && '
+        'rm /usr/local/bin/neko-greet && '
+        f'neko-pkg install {demo} && neko-pkg verify neko-greet && '
+        "test \"$(neko-greet)\" = 'Hello from a NekoOS package' && "
+        "neko-pkg list | grep -Fqx 'neko-greet 0.1.0' && "
+        "printf '\\n%s%s\\n' 'PACKAGE_' 'INSTALLED' && poweroff || poweroff\n"
+    ).encode('ascii')
+    verify_remove = (
+        'neko-pkg verify neko-greet && '
+        "test \"$(neko-greet)\" = 'Hello from a NekoOS package' && "
+        'cp /usr/local/lib/neko-pkg/store/neko-greet/payload /tmp/package-backup && '
+        "printf X >> /usr/local/lib/neko-pkg/store/neko-greet/payload && "
+        'if neko-pkg verify neko-greet; then false; else true; fi && '
+        'cp /tmp/package-backup /usr/local/lib/neko-pkg/store/neko-greet/payload && '
+        'neko-pkg verify neko-greet && neko-pkg remove neko-greet && '
+        'test ! -e /usr/local/bin/neko-greet && '
+        'test -z "$(neko-pkg list)" && '
+        'mkdir /usr/local/lib/neko-pkg/store/.stage-interrupted && '
+        'mkdir /usr/local/lib/neko-pkg/store/orphan-pkg && '
+        "printf '\\n%s%s\\n' 'PACKAGE_' 'REMOVED' && poweroff || poweroff\n"
+    ).encode('ascii')
+    clean = (
+        'test ! -e /usr/local/bin/neko-greet && '
+        'test -z "$(neko-pkg list)" && '
+        'test ! -e /usr/local/lib/neko-pkg/store/.stage-interrupted && '
+        'test ! -e /usr/local/lib/neko-pkg/store/orphan-pkg && '
+        "printf '\\n%s%s\\n' 'PACKAGE_' 'CLEAN' && poweroff || poweroff\n"
+    ).encode('ascii')
+    with tempfile.TemporaryDirectory(prefix='package-test-', dir=ROOT / 'build') as directory:
+        disk = Path(directory) / 'state.img'
+        subprocess.run(['qemu-img', 'create', '-f', 'raw', str(disk), '128M'], check=True)
+        subprocess.run(['mkfs.ext4', '-F', '-q', str(disk)], check=True)
+        for number, command, marker in ((1, install, 'PACKAGE_INSTALLED'),
+                                        (2, verify_remove, 'PACKAGE_REMOVED'),
+                                        (3, clean, 'PACKAGE_CLEAN')):
+            run_disk_guest(images, disk, command, marker, number, args.timeout,
+                           False, log_prefix='package')
+    print('PACKAGE_TEST_PASSED: install, integrity, persistence, remove and cleanup')
+    return 0
+
+
+def run_disk_guest(images, disk, guest_command, marker, pass_number, timeout, iso,
+                   log_prefix=None):
+    prefix = log_prefix or ('iso' if iso else 'disk')
+    log = ROOT / 'build/logs' / f'{prefix}-test-{pass_number}.log'
     log.parent.mkdir(parents=True, exist_ok=True)
     command = [
         'qemu-system-x86_64', '-machine', 'q35', '-accel', 'tcg',

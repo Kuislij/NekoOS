@@ -83,7 +83,7 @@ def validate(entries):
         'usr/include', 'usr/lib', 'usr/lib/tcc', 'usr/lib/tcc/include',
         'usr/lib64', 'usr/local', 'usr/local/bin', 'usr/local/lib',
         'usr/local/sbin', 'usr/sbin', 'usr/share', 'usr/share/nekoos',
-        'usr/share/nekoos/examples', 'var', 'var/cache',
+        'usr/share/nekoos/examples', 'usr/share/nekoos/packages', 'var', 'var/cache',
         'var/lib', 'var/log', 'var/tmp'
     ):
         entry(directory, stat.S_ISDIR, 'directory')
@@ -98,6 +98,7 @@ def validate(entries):
         require(entry(path, stat.S_ISLNK, 'symlink')[1] == target,
                 f'wrong symlink target: {path}')
     for path in ('usr/bin/busybox', 'usr/bin/neko-help', 'usr/bin/neko-shell',
+                 'usr/bin/neko-pkg',
                  'usr/bin/neko-service', 'etc/neko/services/network',
                  'usr/bin/tcc', 'usr/lib/libc.so', 'init'):
         mode = entry(path, stat.S_ISREG, 'regular file')[0]
@@ -105,7 +106,9 @@ def validate(entries):
     for path in ('etc/inittab', 'etc/os-release', 'etc/passwd', 'etc/group',
                  'etc/neko/boot-services'):
         entry(path, stat.S_ISREG, 'regular file')
-    for path in ('usr/share/nekoos/examples/hello.c', 'usr/include/stdio.h',
+    for path in ('usr/share/nekoos/examples/hello.c',
+                 'usr/share/nekoos/packages/neko-greet-0.1.0.npkg',
+                 'usr/include/stdio.h',
                  'usr/include/linux/version.h',
                  'usr/lib/libc.a', 'usr/lib/crt1.o', 'usr/lib/tcc/libtcc1.a'):
         entry(path, stat.S_ISREG, 'regular file')

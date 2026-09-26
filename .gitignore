@@ -1,6 +1,7 @@
 /build/
 /cache/
 /out/
+/packages/local/
 *.iso
 *.qcow2
 *.img

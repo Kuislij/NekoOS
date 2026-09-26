@@ -6,7 +6,7 @@ source "$(dirname -- "${BASH_SOURCE[0]}")/common.sh"
 stage="$root/build/rootfs"
 # Exact generated path under the verified build directory; never accept a caller path.
 rm -rf -- "$stage"
-mkdir -p "$stage"/{dev/pts,etc/neko/services,home,media,mnt,opt,proc,root,run/lock,state,sys,tmp,usr/bin,usr/include,usr/lib,usr/lib64,usr/local/bin,usr/local/lib,usr/local/sbin,usr/sbin,usr/share/nekoos/examples,usr/share/udhcpc,var/cache,var/lib,var/log,var/tmp}
+mkdir -p "$stage"/{dev/pts,etc/neko/services,home,media,mnt,opt,proc,root,run/lock,state,sys,tmp,usr/bin,usr/include,usr/lib,usr/lib64,usr/local/bin,usr/local/lib,usr/local/sbin,usr/sbin,usr/share/nekoos/examples,usr/share/nekoos/packages,usr/share/udhcpc,var/cache,var/lib,var/log,var/tmp}
 # One copy of each program lives under /usr. Classic paths remain available.
 ln -s usr/bin "$stage/bin"
 ln -s usr/sbin "$stage/sbin"
@@ -26,7 +26,7 @@ ln -s tcc "$stage/usr/bin/cc"
 while IFS= read -r applet; do
     [[ "$applet" == busybox ]] || ln -s busybox "$stage/usr/bin/$applet"
 done < "$root/build/busybox-applets.txt"
-for applet in sh mount mkdir sleep ifconfig route udhcpc ping wget; do
+for applet in sh mount mkdir sleep ifconfig route udhcpc ping wget tar sha256sum flock readlink; do
     [[ -x "$stage/usr/bin/$applet" ]] || die "Missing required applet: $applet"
 done
 for applet in init halt poweroff reboot; do
@@ -37,9 +37,22 @@ install -m 755 "$root/rootfs/usr/bin/neko-shell" "$stage/usr/bin/neko-shell"
 install -m 755 "$root/rootfs/usr/bin/neko-boot-status" "$stage/usr/bin/neko-boot-status"
 install -m 755 "$root/rootfs/usr/bin/neko-net-status" "$stage/usr/bin/neko-net-status"
 install -m 755 "$root/rootfs/usr/bin/neko-service" "$stage/usr/bin/neko-service"
+install -m 755 "$root/rootfs/usr/bin/neko-pkg" "$stage/usr/bin/neko-pkg"
 install -m 755 "$root/rootfs/usr/share/udhcpc/default.script" "$stage/usr/share/udhcpc/default.script"
 install -m 644 "$root/rootfs/usr/share/nekoos/examples/hello.c" \
     "$stage/usr/share/nekoos/examples/hello.c"
+python3 "$root/tools/make_package.py" --name neko-greet --version 0.1.0 \
+    --license NOASSERTION --file "$root/packages/examples/neko-greet.sh" \
+    --output "$stage/usr/share/nekoos/packages/neko-greet-0.1.0.npkg"
+for archive in "$root"/packages/local/*.npkg; do
+    [[ -e "$archive" || -L "$archive" ]] || continue
+    [[ -f "$archive" && ! -L "$archive" ]] || die "Local package must be a regular file: $archive"
+    filename="${archive##*/}"
+    [[ "$filename" =~ ^[a-z0-9][a-z0-9.+-]*\.npkg$ ]] || die "Invalid local package filename: $filename"
+    [[ ! -e "$stage/usr/share/nekoos/packages/$filename" ]] || die "Duplicate package filename: $filename"
+    (( $(stat -c%s "$archive") <= 17825792 )) || die "Local package is too large: $filename"
+    install -m 644 "$archive" "$stage/usr/share/nekoos/packages/$filename"
+done
 install -m 755 "$root/rootfs/init" "$stage/init"
 install -m 644 "$root/rootfs/etc/"{group,hosts,inittab,os-release,passwd,profile} "$stage/etc/"
 install -m 644 "$root/rootfs/etc/neko/boot-services" "$stage/etc/neko/boot-services"
