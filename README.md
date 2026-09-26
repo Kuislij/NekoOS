@@ -65,13 +65,42 @@ printf '#!/bin/sh\necho NekoOS\n' > /usr/local/bin/hello-neko
 chmod +x /usr/local/bin/hello-neko
 hello-neko
 neko-service list
+neko-service list --all
 neko-service status network
 ```
 
 После `poweroff` и нового `bash os run` команда `hello-neko` по-прежнему
-работает. При загрузке BusyBox init запускает `neko-service`, который
-последовательно поднимает включённые службы; сейчас в списке только сеть.
-Команды `neko-service start|stop|restart network` управляют ею вручную.
+работает. При загрузке BusyBox init запускает `neko-service`: сначала
+встроенные службы, затем включённые локальные. Сетевая служба включена по
+умолчанию; `neko-service disable network` отключит её при следующей загрузке,
+а `neko-service enable network` включит обратно. Ручные `start|stop|restart`
+действуют сразу и не меняют автозапуск. `list --all` показывает также
+отключённые службы. Настройки автозапуска сохраняются только при запуске с
+виртуальным диском; режим `--ram` не принимает `enable` и `disable`.
+
+Собственную службу можно положить на сохраняемый диск:
+
+```sh
+cat > /usr/local/etc/neko/services/hello <<'EOF'
+#!/bin/sh
+case "$1" in
+  start) echo hello >> /var/lib/hello-service.log ;;
+  status) test -f /var/lib/hello-service.log && echo 'hello: started' ;;
+  stop) : ;;
+  *) exit 2 ;;
+esac
+EOF
+chmod +x /usr/local/etc/neko/services/hello
+neko-service enable hello
+poweroff
+```
+
+После следующего `bash os run` проверьте `cat /var/lib/hello-service.log`.
+`neko-service disable hello` остановит её **автозапуск** со следующего раза;
+текущий процесс при необходимости остановите `neko-service stop hello`.
+Скрипты служб запускаются от root, поэтому добавляйте только доверенный код.
+Ошибка запуска отдельной службы выводит `SERVICE_FAILED:имя`, а консоль остаётся
+доступной; `neko-service status имя` показывает сбой текущей загрузки.
 Основная часть `/usr` и `/etc` по-прежнему приходит из initramfs.
 
 ### Пакеты
@@ -193,13 +222,14 @@ musl. Файлы `hello.c` и `hello` останутся в `/root` после `
 | `bash os test --disk` | Две загрузки с проверкой сохранённого файла |
 | `bash os test --iso` | Две загрузки ISO через BIOS и GRUB, проверка оборудования и данных |
 | `bash os test --net` | Проверить DHCP, DNS-настройку, ICMP и HTTP в QEMU |
+| `bash os test --services` | Проверить сохранение настроек служб на отдельном временном диске |
 | `bash os test --package` | Проверить установку, зависимости, обновление и удаление на отдельном тестовом диске |
 | `bash os test --no-build` | Тест уже собранных файлов с проверкой их SHA256 |
 
 Результаты: `out/images/bzImage`, `initramfs.cpio.gz`, `NekoOS.iso`,
 конфигурации и контрольные суммы. Логи: `build/logs/build.log`, `serial.log`,
 `boot-test.log`, `disk-test-*.log`, `iso-test-*.log`, `network-test.log`,
-`check-dev.log`.
+`services-test-*.log`, `package-test-*.log`, `check-dev.log`.
 Полный вывод сборки
 при `os run` также находится в `run-build.log`. Сборки, кэш, логи и
 виртуальный диск исключены из Git. **Не удаляйте `out/disks/state.img`, если
@@ -222,6 +252,7 @@ musl. Файлы `hello.c` и `hello` останутся в `/root` после `
 [Проверка загрузки через BIOS и GRUB](docs/validation-boot-2026-09-25.md).
 [Проверка сети](docs/validation-network-2026-09-25.md).
 [Проверка локальных программ и служб](docs/validation-services-2026-09-25.md).
+[Проверка сохраняемых служб](docs/validation-persistent-services-2026-09-26.md).
 [Проверка единой musl в базовой системе](docs/validation-musl-2026-09-26.md).
 [Проверка первого формата пакетов](docs/validation-packages-2026-09-26.md).
 [Проверка зависимостей и обновления](docs/validation-package-upgrades-2026-09-26.md).

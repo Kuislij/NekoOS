@@ -6,7 +6,7 @@ source "$(dirname -- "${BASH_SOURCE[0]}")/common.sh"
 stage="$root/build/rootfs"
 # Exact generated path under the verified build directory; never accept a caller path.
 rm -rf -- "$stage"
-mkdir -p "$stage"/{dev/pts,etc/neko/services,home,media,mnt,opt,proc,root,run/lock,state,sys,tmp,usr/bin,usr/include,usr/lib,usr/lib64,usr/local/bin,usr/local/lib,usr/local/sbin,usr/sbin,usr/share/nekoos/examples,usr/share/nekoos/packages,usr/share/udhcpc,var/cache,var/lib,var/log,var/tmp}
+mkdir -p "$stage"/{dev/pts,etc/neko/services,home,media,mnt,opt,proc,root,run/lock,state,sys,tmp,usr/bin,usr/include,usr/lib,usr/lib64,usr/local/bin,usr/local/etc/neko/services,usr/local/lib,usr/local/sbin,usr/sbin,usr/share/nekoos/examples,usr/share/nekoos/packages,usr/share/udhcpc,var/cache,var/lib/neko-services/enabled,var/lib/neko-services/disabled,var/log,var/tmp}
 # One copy of each program lives under /usr. Classic paths remain available.
 ln -s usr/bin "$stage/bin"
 ln -s usr/sbin "$stage/sbin"

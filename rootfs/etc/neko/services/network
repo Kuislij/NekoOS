@@ -1,7 +1,6 @@
 #!/bin/sh
 case "$1" in
     start)
-        ifconfig lo 127.0.0.1 up || exit 1
         if [ -d /sys/class/net/eth0 ]; then
             ifconfig eth0 up || exit 1
             udhcpc -i eth0 -s /usr/share/udhcpc/default.script -n -q -f -t 5 -T 2 || exit 1

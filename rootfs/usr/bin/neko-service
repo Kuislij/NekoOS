@@ -1,46 +1,146 @@
 #!/bin/sh
-services=/etc/neko/services
+# Built-in services come from initramfs; local services and settings persist.
+builtin=/etc/neko/services
 manifest=/etc/neko/boot-services
+local_services=/usr/local/etc/neko/services
+enabled=/var/lib/neko-services/enabled
+disabled=/var/lib/neko-services/disabled
+failed=/run/neko/services
+
 usage() {
-    echo 'Usage: neko-service {list|status|start|stop|restart} [service]' >&2
+    echo 'Usage: neko-service {list [--all]|is-enabled|enable|disable|status|start|stop|restart} [service]' >&2
     exit 2
 }
+valid_name() {
+    case "$1" in ''|*[!a-z0-9_-]*) return 1 ;; esac
+    case "$1" in [a-z]*) ;; *) return 1 ;; esac
+    [ "${#1}" -le 64 ]
+}
 resolve() {
-    case "$1" in
-        ''|*[!A-Za-z0-9_-]*) usage ;;
-    esac
-    service="$services/$1"
-    [ -f "$service" ] && [ -x "$service" ] && [ ! -L "$service" ] || {
-        echo "Unknown service: $1" >&2
+    valid_name "$1" || return 1
+    if [ -f "$builtin/$1" ] && [ -x "$builtin/$1" ] && [ ! -L "$builtin/$1" ]; then
+        service=$builtin/$1
+        kind=builtin
+    elif [ -f "$local_services/$1" ] && [ -x "$local_services/$1" ] &&
+         [ ! -L "$local_services/$1" ] && [ ! -e "$builtin/$1" ]; then
+        service=$local_services/$1
+        kind=local
+    else
+        return 1
+    fi
+}
+require_service() {
+    resolve "$1" || { echo "Unknown service: $1" >&2; exit 1; }
+}
+is_enabled() {
+    if [ "$kind" = builtin ]; then
+        [ ! -e "$disabled/$1" ] && [ ! -L "$disabled/$1" ]
+    else
+        [ -f "$enabled/$1" ] && [ ! -L "$enabled/$1" ]
+    fi
+}
+require_disk() {
+    grep -q ' /state ext4 ' /proc/mounts || {
+        echo 'Persistent service settings require the virtual disk (without --ram).' >&2
         exit 1
     }
+    mkdir -p "$enabled" "$disabled" || exit 1
 }
-case "$1" in
+list_builtin() {
+    while IFS= read -r name || [ -n "$name" ]; do
+        case "$name" in ''|\#*) continue ;; esac
+        valid_name "$name" && echo "$name"
+    done < "$manifest"
+}
+list_local() {
+    for path in "$local_services"/*; do
+        [ -f "$path" ] && [ -x "$path" ] && [ ! -L "$path" ] || continue
+        name=${path##*/}
+        valid_name "$name" && [ ! -e "$builtin/$name" ] && echo "$name"
+    done
+}
+boot_one() {
+    if ! resolve "$1"; then
+        echo "SERVICE_SKIPPED:$1 (missing or invalid)"
+        return
+    fi
+    if ! is_enabled "$1"; then
+        echo "Skipping disabled service: $1"
+        return
+    fi
+    echo "Starting service: $1"
+    if "$service" start; then
+        rm -f "$failed/$1.failed"
+    else
+        touch "$failed/$1.failed"
+        echo "SERVICE_FAILED:$1"
+    fi
+}
+
+case "${1:-}" in
     boot)
         [ "$#" -eq 1 ] || usage
-        while IFS= read -r name || [ -n "$name" ]; do
-            case "$name" in ''|\#*) continue ;; esac
-            resolve "$name"
-            echo "Starting service: $name"
-            "$service" start || {
-                echo "BOOT_FAILED: service $name"
-                while :; do sleep 3600; done
-            }
-        done < "$manifest"
+        mkdir -p "$failed"
+        list_builtin | while IFS= read -r name; do boot_one "$name"; done
+        list_local | while IFS= read -r name; do boot_one "$name"; done
         echo 'SYSTEM_READY'
         ;;
     list)
-        [ "$#" -eq 1 ] || usage
-        cat "$manifest"
+        if [ "$#" -eq 1 ]; then
+            list_builtin
+            list_local
+        elif [ "$#" -eq 2 ] && [ "$2" = --all ]; then
+            { list_builtin; list_local; } | while IFS= read -r name; do
+                resolve "$name" || continue
+                if is_enabled "$name"; then state=enabled; else state=disabled; fi
+                echo "$name $state $kind"
+            done
+        else
+            usage
+        fi
         ;;
-    status|start|stop)
+    is-enabled)
         [ "$#" -eq 2 ] || usage
-        resolve "$2"
+        require_service "$2"
+        if is_enabled "$2"; then echo enabled; else echo disabled; exit 1; fi
+        ;;
+    enable|disable)
+        [ "$#" -eq 2 ] || usage
+        if ! resolve "$2"; then
+            # A removed local service may still have an enablement marker.
+            if [ "$1" = disable ] && valid_name "$2" &&
+               [ ! -e "$builtin/$2" ] && [ -f "$enabled/$2" ] &&
+               [ ! -L "$enabled/$2" ]; then
+                kind=local
+            else
+                echo "Unknown service: $2" >&2
+                exit 1
+            fi
+        fi
+        require_disk
+        if [ "$kind" = builtin ]; then
+            if [ "$1" = enable ]; then rm -f "$disabled/$2"; else touch "$disabled/$2"; fi
+        else
+            if [ "$1" = enable ]; then touch "$enabled/$2"; else rm -f "$enabled/$2"; fi
+        fi
+        echo "$2: $1 (takes effect at next boot)"
+        ;;
+    status)
+        [ "$#" -eq 2 ] || usage
+        require_service "$2"
+        if is_enabled "$2"; then state=enabled; else state=disabled; fi
+        echo "$2: autostart $state"
+        [ ! -f "$failed/$2.failed" ] || echo "$2: last boot start failed"
+        exec "$service" status
+        ;;
+    start|stop)
+        [ "$#" -eq 2 ] || usage
+        require_service "$2"
         exec "$service" "$1"
         ;;
     restart)
         [ "$#" -eq 2 ] || usage
-        resolve "$2"
+        require_service "$2"
         "$service" stop && exec "$service" start
         ;;
     *) usage ;;

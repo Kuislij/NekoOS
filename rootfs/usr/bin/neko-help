@@ -14,8 +14,10 @@ NekoOS 0.1 — краткая помощь
   neko-boot-status        Проверить CPU, RAM, прерывания, ACPI, диск и ext4
   neko-net-status         Показать адрес, маршрут и DNS (запуск с --net)
   ping -c 1 127.0.0.1     Проверить локальный сетевой стек
-  neko-service list       Показать службы, запускаемые при старте
+  neko-service list --all Показать все службы и их автозапуск
   neko-service status network  Проверить состояние сетевой службы
+  neko-service disable network  Отключить автозапуск сети (нужен диск)
+  neko-service enable network   Включить автозапуск обратно
   neko-pkg info /usr/share/nekoos/packages/neko-greet-0.1.0.npkg
   neko-pkg install /usr/share/nekoos/packages/neko-greet-0.1.0.npkg
   neko-greet              Запустить установленный пакет (нужен диск)
@@ -28,6 +30,7 @@ NekoOS 0.1 — краткая помощь
   poweroff                Выключить виртуальную машину
 
 Файлы в /root, /home и программы в /usr/local сохраняются при запуске с диском.
+Свои службы храните в /usr/local/etc/neko/services и включайте через neko-service.
 Временные файлы в /tmp исчезнут после выключения. Выход из QEMU:
 Ctrl+A, отпустить клавиши, затем X.
 Сеть включается только флагом --net при запуске QEMU.

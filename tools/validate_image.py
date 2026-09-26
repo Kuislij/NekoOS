@@ -81,10 +81,12 @@ def validate(entries):
         'home', 'media', 'mnt', 'opt', 'proc',
         'root', 'run', 'run/lock', 'state', 'sys', 'tmp', 'usr', 'usr/bin',
         'usr/include', 'usr/lib', 'usr/lib/tcc', 'usr/lib/tcc/include',
-        'usr/lib64', 'usr/local', 'usr/local/bin', 'usr/local/lib',
+        'usr/lib64', 'usr/local', 'usr/local/bin', 'usr/local/etc',
+        'usr/local/etc/neko', 'usr/local/etc/neko/services', 'usr/local/lib',
         'usr/local/sbin', 'usr/sbin', 'usr/share', 'usr/share/nekoos',
         'usr/share/nekoos/examples', 'usr/share/nekoos/packages', 'var', 'var/cache',
-        'var/lib', 'var/log', 'var/tmp'
+        'var/lib', 'var/lib/neko-services', 'var/lib/neko-services/enabled',
+        'var/lib/neko-services/disabled', 'var/log', 'var/tmp'
     ):
         entry(directory, stat.S_ISDIR, 'directory')
     for path, target in {

@@ -22,6 +22,7 @@ def main():
     parser.add_argument('--iso', action='store_true', help='boot the persistent VM through BIOS and GRUB')
     parser.add_argument('--net', action='store_true', help='verify DHCP, loopback and HTTP over virtio-net')
     parser.add_argument('--package', action='store_true', help='install and remove a package on a disposable disk')
+    parser.add_argument('--services', action='store_true', help='verify persistent service settings on a disposable disk')
     parser.add_argument('--timeout', type=int, default=90, help='boot deadline in seconds')
     args = parser.parse_args()
     if args.timeout < 1:
@@ -32,10 +33,14 @@ def main():
         parser.error('--net test uses a temporary VM; do not combine it with --disk or --iso')
     if args.package and (args.disk or args.iso or args.net):
         parser.error('--package cannot be combined with --disk, --iso or --net')
+    if args.services and (args.disk or args.iso or args.net or args.package):
+        parser.error('--services cannot be combined with other test modes')
     if sys.platform != 'linux' or os.geteuid() == 0:
         parser.error('run as a regular Linux / WSL2 user')
     (ROOT / 'build').mkdir(exist_ok=True)
-    if args.package:
+    if args.services:
+        lock_name = '.services-test.lock'
+    elif args.package:
         lock_name = '.package-test.lock'
     elif args.net:
         lock_name = '.network-test.lock'
@@ -48,6 +53,8 @@ def main():
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             raise RuntimeError('Another boot test is already running') from None
+        if args.services:
+            return boot_services(args)
         if args.package:
             return boot_package(args)
         if args.net:
@@ -192,6 +199,7 @@ def boot(args):
                         b"test -d /var/lib && test -d /usr/local/bin && "
                         b"neko-service list | grep -Fqx network && "
                         b"neko-service status network && "
+                        b"if neko-service disable network; then false; else true; fi && "
                         b"test -r /proc/version && test -d /sys/kernel && "
                         b"test -c /dev/console && test -c /dev/pts/ptmx && "
                         b"echo neko-test > /tmp/smoke && "
@@ -372,8 +380,74 @@ def boot_package(args):
     return 0
 
 
+def boot_services(args):
+    if not args.no_build:
+        subprocess.run(['bash', str(ROOT / 'scripts/build.sh')], check=True)
+    images = ROOT / 'out/images'
+    subprocess.run(['sha256sum', '-c', 'SHA256SUMS'], cwd=images, check=True)
+    subprocess.run([sys.executable, str(ROOT / 'tools/validate_image.py'),
+                    str(images / 'initramfs.cpio.gz')], check=True)
+    local = '/usr/local/etc/neko/services'
+    create = (
+        "neko-service list --all | grep -Fqx 'network enabled builtin' && "
+        f"printf '%s\\n' '#!/bin/sh' 'case \"$1\" in' "
+        "'start) echo demo-ok > /var/lib/neko-services/demo-runs ;;' "
+        "'status) echo demo: ready ;;' 'stop) : ;;' '*) exit 2 ;;' "
+        f"'esac' > {local}/demo && chmod +x {local}/demo && "
+        "neko-service list --all | grep -Fqx 'demo disabled local' && "
+        "neko-service enable demo && neko-service disable network && "
+        "if neko-service is-enabled network; then false; else true; fi && "
+        "neko-service is-enabled demo | grep -Fqx enabled && "
+        "printf '\\n%s%s\\n' 'SERVICES_' 'CREATED' && poweroff || poweroff\n"
+    ).encode('ascii')
+    verify = (
+        "test \"$(cat /var/lib/neko-services/demo-runs)\" = demo-ok && "
+        "neko-service list --all | grep -Fqx 'network disabled builtin' && "
+        "neko-service list --all | grep -Fqx 'demo enabled local' && "
+        "ping -c 1 -W 2 127.0.0.1 >/tmp/loopback.log && "
+        f"printf '%s\\n' '#!/bin/sh' 'case \"$1\" in' "
+        "'start) exit 1 ;;' 'status) echo broken: failed ;;' "
+        "'stop) : ;;' '*) exit 2 ;;' 'esac' "
+        f"> {local}/broken && chmod +x {local}/broken && "
+        "neko-service enable broken && neko-service disable demo && "
+        "neko-service enable network && "
+        "rm /var/lib/neko-services/demo-runs && "
+        "printf '\\n%s%s\\n' 'SERVICES_' 'PERSISTED' && poweroff || poweroff\n"
+    ).encode('ascii')
+    recover = (
+        "test ! -e /var/lib/neko-services/demo-runs && "
+        "neko-service list --all | grep -Fqx 'network enabled builtin' && "
+        "neko-service list --all | grep -Fqx 'demo disabled local' && "
+        "neko-service status broken | grep -Fqx 'broken: last boot start failed' && "
+        f"rm {local}/broken && neko-service disable broken && "
+        "test ! -e /var/lib/neko-services/enabled/broken && "
+        "printf '\\n%s%s\\n' 'SERVICES_' 'RECOVERED' && poweroff || poweroff\n"
+    ).encode('ascii')
+    with tempfile.TemporaryDirectory(prefix='services-test-', dir=ROOT / 'build') as directory:
+        disk = Path(directory) / 'state.img'
+        subprocess.run(['qemu-img', 'create', '-f', 'raw', str(disk), '128M'], check=True)
+        subprocess.run(['mkfs.ext4', '-F', '-q', str(disk)], check=True)
+        for number, command, marker in ((1, create, 'SERVICES_CREATED'),
+                                        (2, verify, 'SERVICES_PERSISTED'),
+                                        (3, recover, 'SERVICES_RECOVERED')):
+            run_disk_guest(images, disk, command, marker, number, args.timeout,
+                           False, log_prefix='services', network=True)
+            log = (ROOT / 'build/logs' / f'services-test-{number}.log').read_text(
+                errors='replace')
+            if number == 2 and ('Starting service: demo' not in log
+                                or 'Starting service: network' in log
+                                or 'NETWORK_READY' in log):
+                raise RuntimeError('Disabled network or enabled local service boot check failed')
+            if number == 3 and ('SERVICE_FAILED:broken' not in log
+                                or 'Starting service: demo' in log
+                                or 'NETWORK_READY' not in log):
+                raise RuntimeError('Service failure recovery or re-enabled network failed')
+    print('SERVICES_TEST_PASSED: persistent enablement, loopback, and failure recovery')
+    return 0
+
+
 def run_disk_guest(images, disk, guest_command, marker, pass_number, timeout, iso,
-                   log_prefix=None):
+                   log_prefix=None, network=False):
     prefix = log_prefix or ('iso' if iso else 'disk')
     log = ROOT / 'build/logs' / f'{prefix}-test-{pass_number}.log'
     log.parent.mkdir(parents=True, exist_ok=True)
@@ -381,7 +455,8 @@ def run_disk_guest(images, disk, guest_command, marker, pass_number, timeout, is
         'qemu-system-x86_64', '-machine', 'q35', '-accel', 'tcg',
         '-cpu', 'qemu64', '-m', '256M', '-smp', '2', '-nodefaults',
         '-display', 'none', '-monitor', 'none', '-serial', 'stdio',
-        '-nic', 'none', '-no-reboot',
+        '-nic', ('user,model=virtio-net-pci,ipv6=off' if network else 'none'),
+        '-no-reboot',
         '-drive', f'file={disk},format=raw,if=virtio',
     ]
     if iso:
