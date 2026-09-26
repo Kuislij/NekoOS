@@ -54,13 +54,21 @@ python3 "$root/tools/make_package.py" --name neko-companion --version 1.0.0 \
     --license NOASSERTION --depends 'neko-greet>=0.2.0' \
     --file "$root/packages/examples/neko-companion.sh" \
     --output "$stage/usr/share/nekoos/packages/neko-companion-1.0.0.npkg"
+python3 "$root/tools/make_package.py" --name neko-theme --version 1.0.0 \
+    --license NOASSERTION --file "$root/packages/examples/neko-theme.sh" \
+    --resource "share/message.txt=$root/packages/examples/neko-theme-v1.txt" \
+    --output "$stage/usr/share/nekoos/packages/neko-theme-1.0.0.npkg"
+python3 "$root/tools/make_package.py" --name neko-theme --version 1.1.0 \
+    --license NOASSERTION --file "$root/packages/examples/neko-theme.sh" \
+    --resource "share/message.txt=$root/packages/examples/neko-theme-v2.txt" \
+    --output "$stage/usr/share/nekoos/packages/neko-theme-1.1.0.npkg"
 for archive in "$root"/packages/local/*.npkg; do
     [[ -e "$archive" || -L "$archive" ]] || continue
     [[ -f "$archive" && ! -L "$archive" ]] || die "Local package must be a regular file: $archive"
     filename="${archive##*/}"
     [[ "$filename" =~ ^[a-z0-9][a-z0-9.+-]*\.npkg$ ]] || die "Invalid local package filename: $filename"
     [[ ! -e "$stage/usr/share/nekoos/packages/$filename" ]] || die "Duplicate package filename: $filename"
-    (( $(stat -c%s "$archive") <= 17825792 )) || die "Local package is too large: $filename"
+    (( $(stat -c%s "$archive") <= 35651584 )) || die "Local package is too large: $filename"
     install -m 644 "$archive" "$stage/usr/share/nekoos/packages/$filename"
 done
 install -m 755 "$root/rootfs/init" "$stage/init"

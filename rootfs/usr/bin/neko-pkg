@@ -1,9 +1,14 @@
 #!/bin/sh
-# NekoPkg/1 and /2: verified single-command packages on persistent /usr/local.
+# NekoPkg/1, /2 and /3: verified packages on persistent /usr/local.
 set -eu
+LC_ALL=C
+export LC_ALL
 base=/usr/local/lib/neko-pkg
 store=$base/store
+active=$base/active
 bin=/usr/local/bin
+lib=/usr/local/lib
+share=/usr/local/share
 stage=
 temporary_link=
 
@@ -24,6 +29,33 @@ valid_legacy_version() {
 valid_number() {
     case "$1" in ''|0[0-9]*|*[!0-9]*) return 1 ;; esac
     [ "${#1}" -le 4 ]
+}
+valid_resource_path() {
+    [ "${#1}" -le 96 ] || return 1
+    case "$1" in files/share/*|files/lib/*) ;; *) return 1 ;; esac
+    case "$1" in *[!A-Za-z0-9._+/-]*|*//*|*/./*|*/../*|*/.|*/..|*/) return 1 ;; esac
+}
+valid_hash() {
+    [ "${#1}" -eq 64 ] || return 1
+    case "$1" in *[!0-9a-f]*) return 1 ;; esac
+}
+valid_size() {
+    case "$1" in ''|0[0-9]*|*[!0-9]*) return 1 ;; esac
+    [ "${#1}" -le 8 ] && [ "$1" -le 16777216 ]
+}
+split_resource() {
+    local value=$1 rest
+    case "$value" in file=*) value=${value#file=} ;; *) return 1 ;; esac
+    case "$value" in *'|'*'|'*'|'*) ;; *) return 1 ;; esac
+    resource_path=${value%%|*}
+    rest=${value#*|}
+    resource_size=${rest%%|*}
+    rest=${rest#*|}
+    resource_sha=${rest%%|*}
+    resource_mode=${rest#*|}
+    case "$resource_mode" in *'|'*) return 1 ;; 644|755) ;; *) return 1 ;; esac
+    valid_resource_path "$resource_path" && valid_size "$resource_size" &&
+        valid_hash "$resource_sha"
 }
 parse_semver() {
     local value=$1 rest
@@ -79,12 +111,14 @@ validate_dependencies() {
 }
 parse_manifest() {
     [ -f "$1" ] && [ ! -L "$1" ] || return 1
+    manifest_file=$1
     line_no=0
     pkg_format= pkg_name= pkg_version= pkg_license= pkg_depends= pkg_size= pkg_sha=
+    pkg_resource_count= resource_seen= resource_count=0 resource_total=0
     while IFS= read -r line || [ -n "$line" ]; do
         line_no=$((line_no + 1))
         case "$line_no" in
-            1) case "$line" in NEKOPKG/1) pkg_format=1 ;; NEKOPKG/2) pkg_format=2 ;; *) return 1 ;; esac ;;
+            1) case "$line" in NEKOPKG/1) pkg_format=1 ;; NEKOPKG/2) pkg_format=2 ;; NEKOPKG/3) pkg_format=3 ;; *) return 1 ;; esac ;;
             2) case "$line" in name=*) pkg_name=${line#name=} ;; *) return 1 ;; esac ;;
             3) case "$line" in version=*) pkg_version=${line#version=} ;; *) return 1 ;; esac ;;
             4) [ "$line" = arch=x86_64 ] || return 1 ;;
@@ -93,10 +127,26 @@ parse_manifest() {
             7) [ "$line" = "path=/usr/local/bin/$pkg_name" ] || return 1 ;;
             8) case "$line" in size=*) pkg_size=${line#size=} ;; *) return 1 ;; esac ;;
             9) case "$line" in sha256=*) pkg_sha=${line#sha256=} ;; *) return 1 ;; esac ;;
-            *) return 1 ;;
+            10) [ "$pkg_format" = 3 ] || return 1
+                case "$line" in files=*) pkg_resource_count=${line#files=} ;; *) return 1 ;; esac ;;
+            *) [ "$pkg_format" = 3 ] && split_resource "$line" || return 1
+                case " $resource_seen " in *" $resource_path "*) return 1 ;; esac
+                resource_seen="$resource_seen $resource_path"
+                resource_count=$((resource_count + 1))
+                [ "$resource_count" -le 64 ] || return 1
+                resource_total=$((resource_total + resource_size)) ;;
         esac
     done < "$1"
-    [ "$line_no" -eq 9 ] && valid_name "$pkg_name" || return 1
+    if [ "$pkg_format" = 3 ]; then
+        case "$pkg_resource_count" in ''|0[0-9]*|*[!0-9]*) return 1 ;; esac
+        [ "${#pkg_resource_count}" -le 2 ] &&
+            [ "$pkg_resource_count" -eq "$resource_count" ] &&
+            [ "$resource_count" -le 64 ] &&
+            [ "$line_no" -eq $((10 + resource_count)) ] || return 1
+    else
+        [ "$line_no" -eq 9 ] || return 1
+    fi
+    valid_name "$pkg_name" || return 1
     valid_legacy_version "$pkg_version" || return 1
     if [ "$pkg_format" = 1 ]; then
         [ "$pkg_depends" = none ] || return 1
@@ -106,45 +156,98 @@ parse_manifest() {
     [ "${#pkg_license}" -le 64 ] || return 1
     case "$pkg_license" in [A-Za-z0-9]*) ;; *) return 1 ;; esac
     case "$pkg_license" in *[!A-Za-z0-9.+-]*) return 1 ;; esac
-    case "$pkg_size" in ''|0*|*[!0-9]*) return 1 ;; esac
-    [ "${#pkg_size}" -le 8 ] && [ "$pkg_size" -le 16777216 ] || return 1
-    [ "${#pkg_sha}" -eq 64 ] || return 1
-    case "$pkg_sha" in *[!0-9a-f]*) return 1 ;; esac
+    valid_size "$pkg_size" && [ "$pkg_size" -gt 0 ] || return 1
+    valid_hash "$pkg_sha" || return 1
+    [ "$((pkg_size + resource_total))" -le 33554432 ]
 }
-check_payload() {
+check_file() {
     [ -f "$1" ] && [ ! -L "$1" ] || return 1
     actual_size=$(wc -c < "$1")
-    [ "$actual_size" -eq "$pkg_size" ] || return 1
+    [ "$actual_size" -eq "$2" ] || return 1
     hash_line=$(sha256sum "$1") || return 1
-    [ "${hash_line%% *}" = "$pkg_sha" ]
+    [ "${hash_line%% *}" = "$3" ]
+}
+check_payload() {
+    check_file "$1" "$pkg_size" "$pkg_sha"
+}
+each_resource() {
+    local file=$1 action=$2 line_no=0 line
+    while IFS= read -r line || [ -n "$line" ]; do
+        line_no=$((line_no + 1))
+        [ "$line_no" -gt 10 ] || continue
+        split_resource "$line" || return 1
+        "$action" || return 1
+    done < "$file"
+}
+check_resource() {
+    check_file "$resource_root/$resource_path" "$resource_size" "$resource_sha" || return 1
+    if [ "$resource_mode" = 755 ]; then
+        [ -x "$resource_root/$resource_path" ]
+    else
+        [ ! -x "$resource_root/$resource_path" ]
+    fi
+}
+check_package_files() {
+    resource_root=$1
+    check_payload "$1/payload" || return 1
+    [ "$pkg_format" = 3 ] || return 0
+    [ -d "$1/files/share" ] && [ ! -L "$1/files/share" ] &&
+        [ -d "$1/files/lib" ] && [ ! -L "$1/files/lib" ] || return 1
+    each_resource "$1/manifest" check_resource
+}
+append_resource_name() {
+    printf '%s\n' "$resource_path" >> "$expected_names"
+}
+extract_resource() {
+    mkdir -p -- "$extract_root/${resource_path%/*}" || return 1
+    tar -xOzf "$archive" "$resource_path" 2>/dev/null |
+        head -c 16777217 > "$extract_root/$resource_path" || return 1
+    check_file "$extract_root/$resource_path" "$resource_size" "$resource_sha" || return 1
+    chmod "$resource_mode" "$extract_root/$resource_path"
 }
 verify_archive() {
     archive=$1 target=$2
     [ -f "$archive" ] || return 1
     archive_size=$(wc -c < "$archive")
-    [ "$archive_size" -le 17825792 ] || return 1
+    [ "$archive_size" -le 35651584 ] || return 1
     tar -tzf "$archive" >/dev/null 2>&1 || return 1
-    names=$(tar -tzf "$archive" 2>/dev/null | head -c 128) || return 1
-    [ "$names" = "$(printf 'manifest\npayload')" ] || return 1
-    tar -tvzf "$archive" 2>/dev/null | head -c 512 > "$target/types" || return 1
+    tar -tzf "$archive" 2>/dev/null | head -c 8193 > "$target/names" || return 1
+    [ "$(wc -c < "$target/names")" -le 8192 ] || return 1
+    tar -tvzf "$archive" 2>/dev/null | head -c 32769 > "$target/types" || return 1
+    [ "$(wc -c < "$target/types")" -le 32768 ] || return 1
     type_count=0
     while IFS= read -r line; do
         case "$line" in -*) ;; *) return 1 ;; esac
         type_count=$((type_count + 1))
     done < "$target/types"
-    [ "$type_count" -eq 2 ] || return 1
-    tar -xOzf "$archive" manifest 2>/dev/null | head -c 1025 > "$target/manifest" || return 1
-    [ "$(wc -c < "$target/manifest")" -le 1024 ] || return 1
+    [ "$type_count" -le 66 ] || return 1
+    tar -xOzf "$archive" manifest 2>/dev/null |
+        head -c 16385 > "$target/manifest" || return 1
+    [ "$(wc -c < "$target/manifest")" -le 16384 ] || return 1
     parse_manifest "$target/manifest" || return 1
-    tar -xOzf "$archive" payload 2>/dev/null | head -c 16777217 > "$target/payload" || return 1
+    expected_names=$target/expected
+    printf 'manifest\npayload\n' > "$expected_names"
+    if [ "$pkg_format" = 3 ]; then
+        each_resource "$target/manifest" append_resource_name || return 1
+    fi
+    cmp -s "$target/names" "$expected_names" || return 1
+    [ "$type_count" -eq $((2 + resource_count)) ] || return 1
+    tar -xOzf "$archive" payload 2>/dev/null |
+        head -c 16777217 > "$target/payload" || return 1
     check_payload "$target/payload" || return 1
     chmod 755 "$target/payload"
-    rm "$target/types"
+    if [ "$pkg_format" = 3 ]; then
+        mkdir -p -- "$target/files/lib" "$target/files/share" || return 1
+        extract_root=$target
+        each_resource "$target/manifest" extract_resource || return 1
+    fi
+    rm -- "$target/names" "$target/expected" "$target/types"
 }
 require_disk() {
     grep -q ' /state ext4 ' /proc/mounts || die 'Start NekoOS with its persistent disk (without --ram).'
-    [ ! -L "$base" ] && [ ! -L "$store" ] || die 'package store is a symlink'
-    mkdir -p "$store"
+    [ ! -L "$base" ] && [ ! -L "$store" ] && [ ! -L "$active" ] ||
+        die 'package store is a symlink'
+    mkdir -p "$store" "$active" "$lib" "$share"
 }
 lock_store() {
     require_disk
@@ -154,17 +257,41 @@ lock_store() {
 lookup_installed() {
     valid_name "$1" && [ -L "$bin/$1" ] || return 1
     current_target=$(readlink "$bin/$1") || return 1
-    current_entry=${current_target%/payload}
-    [ "$current_target" = "$current_entry/payload" ] || return 1
+    if [ "$current_target" = "$active/$1/payload" ]; then
+        [ -L "$active/$1" ] || return 1
+        current_entry=$(readlink "$active/$1") || return 1
+    else
+        current_entry=${current_target%/payload}
+        [ "$current_target" = "$current_entry/payload" ] || return 1
+    fi
     case "$current_entry" in "$store/$1"|"$store/$1@"*) ;; *) return 1 ;; esac
     [ -d "$current_entry" ] && [ ! -L "$current_entry" ] || return 1
     parse_manifest "$current_entry/manifest" || return 1
     [ "$pkg_name" = "$1" ] && [ -f "$current_entry/payload" ] || return 1
+    if [ "$pkg_format" = 3 ]; then
+        [ "$current_target" = "$active/$1/payload" ] || return 1
+    fi
     case "$current_entry" in
         "$store/$1") [ "$pkg_format" = 1 ] ;;
         "$store/$1@$pkg_version") return 0 ;;
         *) return 1 ;;
     esac
+}
+check_public_links() {
+    [ "$pkg_format" = 3 ] || return 0
+    [ -L "$lib/$pkg_name" ] && [ -L "$share/$pkg_name" ] &&
+        [ "$(readlink "$lib/$pkg_name")" = "$active/$pkg_name/files/lib" ] &&
+        [ "$(readlink "$share/$pkg_name")" = "$active/$pkg_name/files/share" ]
+}
+remove_owned_link() {
+    if [ -L "$1" ] && [ "$(readlink "$1")" = "$2" ]; then
+        rm -- "$1"
+    fi
+}
+remove_public_links() {
+    local name=$1
+    remove_owned_link "$lib/$name" "$active/$name/files/lib"
+    remove_owned_link "$share/$name" "$active/$name/files/share"
 }
 repair_store() {
     for entry in "$store"/.stage-*; do
@@ -174,17 +301,40 @@ repair_store() {
     for link in "$bin"/.neko-pkg-*; do
         [ -L "$link" ] && rm -- "$link"
     done
+    for link in "$active"/.neko-pkg-*; do
+        [ -L "$link" ] && rm -- "$link"
+    done
+    for link in "$active"/*; do
+        [ -L "$link" ] || continue
+        name=${link##*/}
+        valid_name "$name" || continue
+        if [ ! -L "$bin/$name" ] ||
+           [ "$(readlink "$bin/$name")" != "$active/$name/payload" ]; then
+            rm -- "$link"
+            remove_public_links "$name"
+        fi
+    done
     for entry in "$store"/*; do
         [ -d "$entry" ] && [ ! -L "$entry" ] || continue
         candidate=${entry##*/}
         name=${candidate%%@*}
         valid_name "$name" || continue
-        if [ ! -L "$bin/$name" ] ||
-           [ "$(readlink "$bin/$name")" != "$entry/payload" ] ||
-           ! lookup_installed "$name"; then
+        if ! lookup_installed "$name" || [ "$current_entry" != "$entry" ]; then
             if [ -L "$bin/$name" ] &&
                [ "$(readlink "$bin/$name")" = "$entry/payload" ]; then
                 rm -- "$bin/$name"
+            fi
+            if [ -L "$active/$name" ] &&
+               [ "$(readlink "$active/$name")" = "$entry" ]; then
+                [ ! -L "$bin/$name" ] || rm -- "$bin/$name"
+                rm -- "$active/$name"
+                remove_public_links "$name"
+            fi
+            if [ -L "$bin/$name" ] &&
+               [ "$(readlink "$bin/$name")" = "$active/$name/payload" ] &&
+               [ ! -L "$active/$name" ]; then
+                rm -- "$bin/$name"
+                remove_public_links "$name"
             fi
             rm -rf -- "$entry"
         fi
@@ -201,7 +351,9 @@ check_dependencies() (
         split_dependency "$token" || exit 1
         required_name=$dep_name required_version=$dep_version
         lookup_installed "$required_name" || die "missing dependency: $required_name >= $required_version"
-        check_payload "$current_entry/payload" || die "dependency $required_name is damaged"
+        check_package_files "$current_entry" ||
+            die "dependency $required_name is damaged"
+        check_public_links || die "dependency $required_name has missing links"
         version_ge "$pkg_version" "$required_version" ||
             die "dependency $required_name must be >= $required_version (installed: $pkg_version)"
     done
@@ -213,9 +365,8 @@ check_dependents() (
         candidate=${entry##*/}
         candidate=${candidate%%@*}
         valid_name "$candidate" || continue
-        [ -L "$bin/$candidate" ] &&
-            [ "$(readlink "$bin/$candidate")" = "$entry/payload" ] || continue
-        lookup_installed "$candidate" || exit 1
+        lookup_installed "$candidate" || continue
+        [ "$current_entry" = "$entry" ] || continue
         [ "$pkg_name" = "$target_name" ] && continue
         remaining=$pkg_depends
         [ "$remaining" = none ] && continue
@@ -243,6 +394,13 @@ show_info() {
     echo "path=/usr/local/bin/$pkg_name"
     echo "size=$pkg_size"
     echo "sha256=$pkg_sha"
+    if [ "$pkg_format" = 3 ]; then
+        info_line=0
+        while IFS= read -r line || [ -n "$line" ]; do
+            info_line=$((info_line + 1))
+            [ "$info_line" -le 9 ] || printf '%s\n' "$line"
+        done < "$manifest_file"
+    fi
 }
 cleanup() {
     [ -z "$stage" ] || rm -rf -- "$stage"
@@ -260,9 +418,8 @@ case "${1:-}" in
             candidate=${entry##*/}
             candidate=${candidate%%@*}
             valid_name "$candidate" || continue
-            [ -L "$bin/$candidate" ] &&
-                [ "$(readlink "$bin/$candidate")" = "$entry/payload" ] || continue
             lookup_installed "$candidate" || die "invalid installed package: $candidate"
+            [ "$current_entry" = "$entry" ] || continue
             echo "$pkg_name $pkg_version"
         done
         ;;
@@ -296,11 +453,29 @@ case "${1:-}" in
         fi
         destination=$store/$pkg_name@$pkg_version
         [ ! -e "$destination" ] && [ ! -L "$destination" ] || die 'package version already stored'
+        if [ "$pkg_format" = 3 ]; then
+            [ ! -e "$active/$pkg_name" ] && [ ! -L "$active/$pkg_name" ] || die 'active package name is already in use'
+            [ ! -e "$share/$pkg_name" ] && [ ! -L "$share/$pkg_name" ] || die 'share directory name is already in use'
+            [ ! -e "$lib/$pkg_name" ] && [ ! -L "$lib/$pkg_name" ] || die 'library directory name is already in use'
+        fi
         mv -- "$stage" "$destination" || die 'cannot commit package data'
         stage=
-        if ! ln -s "$destination/payload" "$bin/$pkg_name"; then
-            rm -rf -- "$destination"
-            die 'cannot expose package command'
+        if [ "$pkg_format" = 3 ]; then
+            if ! ln -s "$active/$pkg_name/files/share" "$share/$pkg_name" ||
+               ! ln -s "$active/$pkg_name/files/lib" "$lib/$pkg_name" ||
+               ! ln -s "$active/$pkg_name/payload" "$bin/$pkg_name" ||
+               ! ln -s "$destination" "$active/$pkg_name"; then
+                remove_owned_link "$active/$pkg_name" "$destination"
+                remove_owned_link "$bin/$pkg_name" "$active/$pkg_name/payload"
+                remove_public_links "$pkg_name"
+                rm -rf -- "$destination"
+                die 'cannot expose package files'
+            fi
+        else
+            if ! ln -s "$destination/payload" "$bin/$pkg_name"; then
+                rm -rf -- "$destination"
+                die 'cannot expose package command'
+            fi
         fi
         echo "Installed $pkg_name $pkg_version"
         ;;
@@ -312,27 +487,72 @@ case "${1:-}" in
         stage=$store/.stage-$$
         mkdir "$stage" || die 'cannot create staging directory'
         verify_archive "$package" "$stage" || die 'invalid package archive or checksum'
-        [ "$pkg_format" = 2 ] || die 'upgrade requires a NekoPkg/2 archive'
-        new_name=$pkg_name new_version=$pkg_version
+        [ "$pkg_format" = 2 ] || [ "$pkg_format" = 3 ] ||
+            die 'upgrade requires a NekoPkg/2 or /3 archive'
+        new_name=$pkg_name new_version=$pkg_version new_format=$pkg_format
         check_dependencies || exit 1
         lookup_installed "$new_name" || die 'package is not installed; use install'
-        old_entry=$current_entry old_version=$pkg_version
+        old_entry=$current_entry old_version=$pkg_version old_format=$pkg_format
         version_gt "$new_version" "$old_version" || die 'new version must be greater than installed version'
+        if [ "$old_format" = 3 ] && [ "$new_format" != 3 ]; then
+            die 'NekoPkg/3 requires NekoPkg/3 upgrades'
+        fi
         check_dependents "$new_name" "$new_version" || exit 1
+        if [ "$new_format" = 3 ]; then
+            for public in "$share/$new_name" "$lib/$new_name"; do
+                if [ -e "$public" ] || [ -L "$public" ]; then
+                    case "$public" in
+                        "$share/$new_name") expected=$active/$new_name/files/share ;;
+                        *) expected=$active/$new_name/files/lib ;;
+                    esac
+                    [ -L "$public" ] && [ "$(readlink "$public")" = "$expected" ] ||
+                        die "public path is already in use: $public"
+                fi
+            done
+            if [ -e "$active/$new_name" ] || [ -L "$active/$new_name" ]; then
+                [ -L "$active/$new_name" ] &&
+                    [ "$(readlink "$active/$new_name")" = "$old_entry" ] ||
+                    die 'active package pointer does not match installed version'
+            fi
+        fi
         destination=$store/$new_name@$new_version
         [ ! -e "$destination" ] && [ ! -L "$destination" ] || die 'package version already stored'
         mv -- "$stage" "$destination" || die 'cannot commit new package data'
         stage=
-        temporary_link=$bin/.neko-pkg-$new_name-$$
-        if ! ln -s "$destination/payload" "$temporary_link"; then
-            rm -rf -- "$destination"
-            die 'cannot prepare new command link'
-        fi
-        if ! mv -fT -- "$temporary_link" "$bin/$new_name"; then
-            rm -f -- "$temporary_link"
-            temporary_link=
-            rm -rf -- "$destination"
-            die 'cannot switch package version'
+        if [ "$new_format" = 3 ]; then
+            if [ ! -L "$active/$new_name" ]; then
+                ln -s "$old_entry" "$active/$new_name" || die 'cannot prepare active pointer'
+            fi
+            if [ "$(readlink "$bin/$new_name")" != "$active/$new_name/payload" ]; then
+                temporary_link=$bin/.neko-pkg-$new_name-$$
+                ln -s "$active/$new_name/payload" "$temporary_link" ||
+                    die 'cannot prepare command link'
+                mv -fT -- "$temporary_link" "$bin/$new_name" ||
+                    die 'cannot switch command link'
+                temporary_link=
+            fi
+            [ -L "$share/$new_name" ] ||
+                ln -s "$active/$new_name/files/share" "$share/$new_name" ||
+                die 'cannot expose package data'
+            [ -L "$lib/$new_name" ] ||
+                ln -s "$active/$new_name/files/lib" "$lib/$new_name" ||
+                die 'cannot expose package libraries'
+            temporary_link=$active/.neko-pkg-$new_name-$$
+            ln -s "$destination" "$temporary_link" || die 'cannot prepare new active pointer'
+            mv -fT -- "$temporary_link" "$active/$new_name" ||
+                die 'cannot switch package version'
+        else
+            temporary_link=$bin/.neko-pkg-$new_name-$$
+            if ! ln -s "$destination/payload" "$temporary_link"; then
+                rm -rf -- "$destination"
+                die 'cannot prepare new command link'
+            fi
+            if ! mv -fT -- "$temporary_link" "$bin/$new_name"; then
+                rm -f -- "$temporary_link"
+                temporary_link=
+                rm -rf -- "$destination"
+                die 'cannot switch package version'
+            fi
         fi
         temporary_link=
         rm -rf -- "$old_entry" || die 'upgraded, but old version cleanup failed; rerun list'
@@ -344,7 +564,8 @@ case "${1:-}" in
         lock_store
         repair_store
         lookup_installed "$2" || die 'package is not installed'
-        check_payload "$current_entry/payload" || die 'installed file has changed'
+        check_package_files "$current_entry" || die 'installed file has changed'
+        check_public_links || die 'installed public path has changed'
         check_dependencies || exit 1
         echo "Verified $pkg_name $pkg_version"
         ;;
@@ -356,7 +577,17 @@ case "${1:-}" in
         lookup_installed "$2" || die 'package is not installed'
         old_entry=$current_entry
         check_dependents "$2" '' || exit 1
-        rm -- "$bin/$2" || die 'cannot remove command link'
+        if [ "$pkg_format" = 3 ]; then
+            rm -- "$active/$2" || die 'cannot deactivate package'
+            rm -- "$bin/$2" || die 'cannot remove command link'
+            remove_public_links "$2"
+        else
+            rm -- "$bin/$2" || die 'cannot remove command link'
+            if [ -L "$active/$2" ]; then
+                rm -- "$active/$2"
+                remove_public_links "$2"
+            fi
+        fi
         rm -rf -- "$old_entry" || die 'cannot remove package data'
         echo "Removed $2"
         ;;

@@ -26,6 +26,8 @@ def main():
     parser.add_argument('--system', action='store_true', help='boot a writable system root across two boots')
     parser.add_argument('--system-update', action='store_true',
                         help='verify update and rollback on disposable system and data disks')
+    parser.add_argument('--graphics', action='store_true',
+                        help='verify virtual GPU and input devices without opening a window')
     parser.add_argument('--timeout', type=int, default=90, help='boot deadline in seconds')
     args = parser.parse_args()
     if args.timeout < 1:
@@ -41,12 +43,17 @@ def main():
     if args.system and (args.disk or args.net or args.package or args.services):
         parser.error('--system cannot be combined with other test modes')
     if args.system_update and (args.system or args.disk or args.iso or args.net
-                               or args.package or args.services):
+                               or args.package or args.services or args.graphics):
         parser.error('--system-update cannot be combined with other test modes')
+    if args.graphics and (args.system or args.disk or args.iso or args.net
+                          or args.package or args.services):
+        parser.error('--graphics cannot be combined with other test modes')
     if sys.platform != 'linux' or os.geteuid() == 0:
         parser.error('run as a regular Linux / WSL2 user')
     (ROOT / 'build').mkdir(exist_ok=True)
-    if args.system_update:
+    if args.graphics:
+        lock_name = '.graphics-test.lock'
+    elif args.system_update:
         lock_name = '.system-update-test.lock'
     elif args.system:
         lock_name = '.system-test.lock'
@@ -65,6 +72,8 @@ def main():
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             raise RuntimeError('Another boot test is already running') from None
+        if args.graphics:
+            return boot_graphics(args)
         if args.system_update:
             return boot_system_update(args)
         if args.system:
@@ -78,6 +87,67 @@ def main():
         if args.disk:
             return boot_disk(args)
         return boot(args)
+
+
+def boot_graphics(args):
+    if not args.no_build:
+        subprocess.run(['bash', str(ROOT / 'scripts/build.sh')], check=True)
+    images = ROOT / 'out/images'
+    subprocess.run(['sha256sum', '-c', 'SHA256SUMS'], cwd=images, check=True)
+    subprocess.run([sys.executable, str(ROOT / 'tools/validate_image.py'),
+                    str(images / 'initramfs.cpio.gz')], check=True)
+    log = ROOT / 'build/logs/graphics-test.log'
+    log.parent.mkdir(parents=True, exist_ok=True)
+    command = [
+        'qemu-system-x86_64', '-machine', 'q35', '-accel', 'tcg',
+        '-cpu', 'qemu64', '-m', '512M', '-smp', '2', '-nodefaults',
+        '-display', 'none', '-monitor', 'none', '-serial', 'stdio',
+        '-nic', 'none', '-no-reboot',
+        '-device', 'virtio-vga', '-device', 'virtio-keyboard-pci',
+        '-device', 'virtio-mouse-pci',
+        '-kernel', str(images / 'bzImage'),
+        '-initrd', str(images / 'initramfs.cpio.gz'),
+        '-append', 'console=ttyS0,115200 rdinit=/init panic=-1',
+    ]
+    with log.open('wb') as output:
+        process = subprocess.Popen(command, stdin=subprocess.PIPE,
+                                   stdout=output, stderr=subprocess.STDOUT)
+        try:
+            deadline = time.monotonic() + args.timeout
+            sent = False
+            while time.monotonic() < deadline:
+                content = log.read_text(errors='replace')
+                lines = content.replace('\r', '').splitlines()
+                if ('SYSTEM_READY' in lines and 'built-in shell (ash)' in content
+                        and not sent):
+                    process.stdin.write(
+                        b'test -c /dev/dri/card0 && '
+                        b'ls /dev/input/event* >/dev/null && '
+                        b"printf '\\n%s%s\\n' 'GRAPHICS_' 'READY' && poweroff || poweroff\n"
+                    )
+                    process.stdin.flush()
+                    sent = True
+                code = process.poll()
+                if code is not None:
+                    lines = log.read_text(errors='replace').replace('\r', '').splitlines()
+                    if (code == 0 and sent and 'GRAPHICS_READY' in lines
+                            and any('Power down' in line for line in lines)):
+                        print(f'GRAPHICS_TEST_PASSED: virtual GPU and input devices. Log: {log}')
+                        return 0
+                    raise RuntimeError(f'Graphics boot failed; see {log}')
+                if 'Kernel panic' in content or 'BOOT_FAILED:' in content:
+                    raise RuntimeError(f'Graphics boot failed; see {log}')
+                time.sleep(0.1)
+            raise RuntimeError(f'Graphics boot timed out; see {log}')
+        finally:
+            if process.poll() is None:
+                process.terminate()
+                try:
+                    process.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.wait()
+            process.stdin.close()
 
 
 def boot_network(args):
@@ -320,6 +390,8 @@ def boot_package(args):
     newer = '/usr/share/nekoos/packages/neko-greet-0.2.0.npkg'
     newest = '/usr/share/nekoos/packages/neko-greet-0.3.0.npkg'
     companion = '/usr/share/nekoos/packages/neko-companion-1.0.0.npkg'
+    theme = '/usr/share/nekoos/packages/neko-theme-1.0.0.npkg'
+    theme_new = '/usr/share/nekoos/packages/neko-theme-1.1.0.npkg'
     install = (
         f'neko-pkg info {demo} | grep -Fqx name=neko-greet && '
         f'head -c 64 {demo} > /tmp/broken.npkg && '
@@ -336,6 +408,16 @@ def boot_package(args):
         '/usr/local/bin/neko-greet && neko-pkg verify neko-greet && '
         "test \"$(neko-greet)\" = 'Hello from a NekoOS package' && "
         "neko-pkg list | grep -Fqx 'neko-greet 0.1.0' && "
+        f'neko-pkg info {theme} | grep -Fqx files=1 && '
+        'mkdir /usr/local/share/neko-theme && '
+        'printf personal > /usr/local/share/neko-theme/message.txt && '
+        f'if neko-pkg install {theme}; then false; else true; fi && '
+        'test "$(cat /usr/local/share/neko-theme/message.txt)" = personal && '
+        'rm -r /usr/local/share/neko-theme && '
+        f'neko-pkg install {theme} && neko-pkg verify neko-theme && '
+        'neko-pkg info neko-theme | grep -Fqx files=1 && '
+        'test "$(cat /usr/local/share/neko-theme/message.txt)" = NEKO_THEME_V1 && '
+        'test "$(neko-theme)" = NEKO_THEME_V1 && '
         "printf '\\n%s%s\\n' 'PACKAGE_' 'INSTALLED' && poweroff || poweroff\n"
     ).encode('ascii')
     dependencies = (
@@ -355,6 +437,16 @@ def boot_package(args):
         "neko-companion | grep -Fqx 'Companion is ready' && "
         "neko-pkg list | grep -Fqx 'neko-greet 0.2.0' && "
         "neko-pkg list | grep -Fqx 'neko-companion 1.0.0' && "
+        f'neko-pkg upgrade {theme_new} && neko-pkg verify neko-theme && '
+        'test "$(cat /usr/local/share/neko-theme/message.txt)" = NEKO_THEME_V2 && '
+        'test "$(neko-theme)" = NEKO_THEME_V2 && '
+        'cp /usr/local/lib/neko-pkg/store/neko-theme@1.1.0/files/share/message.txt '
+        '/tmp/theme-backup && '
+        'printf X >> /usr/local/lib/neko-pkg/store/neko-theme@1.1.0/files/share/message.txt && '
+        'if neko-pkg verify neko-theme; then false; else true; fi && '
+        'cp /tmp/theme-backup '
+        '/usr/local/lib/neko-pkg/store/neko-theme@1.1.0/files/share/message.txt && '
+        'neko-pkg verify neko-theme && '
         "printf '\\n%s%s\\n' 'PACKAGE_' 'DEPENDENCY' && poweroff || poweroff\n"
     ).encode('ascii')
     upgrade_remove = (
@@ -369,6 +461,9 @@ def boot_package(args):
         'cp /tmp/package-backup /usr/local/lib/neko-pkg/store/neko-greet@0.3.0/payload && '
         'neko-pkg verify neko-greet && '
         'neko-pkg remove neko-companion && neko-pkg remove neko-greet && '
+        'neko-pkg remove neko-theme && '
+        'test ! -e /usr/local/share/neko-theme && '
+        'test ! -e /usr/local/lib/neko-theme && '
         'test ! -e /usr/local/bin/neko-greet && '
         'test -z "$(neko-pkg list)" && '
         'mkdir /usr/local/lib/neko-pkg/store/.stage-interrupted && '
@@ -392,7 +487,7 @@ def boot_package(args):
                                         (4, clean, 'PACKAGE_CLEAN')):
             run_disk_guest(images, disk, command, marker, number, args.timeout,
                            False, log_prefix='package')
-    print('PACKAGE_TEST_PASSED: legacy upgrade, dependencies, integrity and cleanup')
+    print('PACKAGE_TEST_PASSED: legacy upgrade, dependencies, multi-file resources and cleanup')
     return 0
 
 
@@ -414,12 +509,23 @@ def boot_services(args):
         "neko-service enable demo && neko-service disable network && "
         "if neko-service is-enabled network; then false; else true; fi && "
         "neko-service is-enabled demo | grep -Fqx enabled && "
+        f"printf '%s\\n' '#!/bin/sh' '# neko-service: foreground' "
+        "'case \"$1\" in' 'run) exec sleep 100 ;;' '*) exit 2 ;;' 'esac' "
+        f"> {local}/ticker && chmod +x {local}/ticker && "
+        "neko-service enable ticker && neko-service start ticker && "
+        "neko-service status ticker | grep -Fq 'ticker: running (pid ' && "
+        "neko-service stop ticker && "
+        "if neko-service status ticker; then false; else true; fi && "
         "printf '\\n%s%s\\n' 'SERVICES_' 'CREATED' && poweroff || poweroff\n"
     ).encode('ascii')
     verify = (
         "test \"$(cat /var/lib/neko-services/demo-runs)\" = demo-ok && "
         "neko-service list --all | grep -Fqx 'network disabled builtin' && "
         "neko-service list --all | grep -Fqx 'demo enabled local' && "
+        "neko-service status ticker | grep -Fq 'ticker: running (pid ' && "
+        "neko-service restart ticker && "
+        "neko-service status ticker | grep -Fq 'ticker: running (pid ' && "
+        "neko-service disable ticker && "
         "ping -c 1 -W 2 127.0.0.1 >/tmp/loopback.log && "
         f"printf '%s\\n' '#!/bin/sh' 'case \"$1\" in' "
         "'start) exit 1 ;;' 'status) echo broken: failed ;;' "
@@ -434,6 +540,10 @@ def boot_services(args):
         "test ! -e /var/lib/neko-services/demo-runs && "
         "neko-service list --all | grep -Fqx 'network enabled builtin' && "
         "neko-service list --all | grep -Fqx 'demo disabled local' && "
+        "if neko-service status ticker; then false; else true; fi && "
+        "neko-service start ticker && "
+        "neko-service status ticker | grep -Fq 'ticker: running (pid ' && "
+        "neko-service stop ticker && rm /usr/local/etc/neko/services/ticker && "
         "neko-service status broken | grep -Fqx 'broken: last boot start failed' && "
         f"rm {local}/broken && neko-service disable broken && "
         "test ! -e /var/lib/neko-services/enabled/broken && "
@@ -458,7 +568,7 @@ def boot_services(args):
                                 or 'Starting service: demo' in log
                                 or 'NETWORK_READY' not in log):
                 raise RuntimeError('Service failure recovery or re-enabled network failed')
-    print('SERVICES_TEST_PASSED: persistent enablement, loopback, and failure recovery')
+    print('SERVICES_TEST_PASSED: persistent enablement, process lifecycle and failure recovery')
     return 0
 
 

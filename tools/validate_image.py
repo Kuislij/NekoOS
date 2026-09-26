@@ -113,6 +113,8 @@ def validate(entries):
                  'usr/share/nekoos/packages/neko-greet-0.2.0.npkg',
                  'usr/share/nekoos/packages/neko-greet-0.3.0.npkg',
                  'usr/share/nekoos/packages/neko-companion-1.0.0.npkg',
+                 'usr/share/nekoos/packages/neko-theme-1.0.0.npkg',
+                 'usr/share/nekoos/packages/neko-theme-1.1.0.npkg',
                  'usr/include/stdio.h',
                  'usr/include/linux/version.h',
                  'usr/lib/libc.a', 'usr/lib/crt1.o', 'usr/lib/tcc/libtcc1.a'):

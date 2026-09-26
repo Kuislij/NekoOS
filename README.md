@@ -148,6 +148,28 @@ poweroff
 После следующего `bash os run` проверьте `cat /var/lib/hello-service.log`.
 `neko-service disable hello` остановит её **автозапуск** со следующего раза;
 текущий процесс при необходимости остановите `neko-service stop hello`.
+Для долгоживущей программы служба может отдать управление процессом самой
+NekoOS. Добавьте в её скрипт отдельную строку `# neko-service: foreground`, а
+в действии `run` запускайте программу через `exec` без `&`. Тогда команды
+`neko-service start|status|stop|restart ИМЯ` отслеживают процесс, записывают
+его вывод в `/run/neko/services/ИМЯ.log` и могут штатно остановить его:
+
+```sh
+cat > /usr/local/etc/neko/services/ticker <<'EOF'
+#!/bin/sh
+# neko-service: foreground
+case "$1" in
+  run) exec sleep 600 ;;
+  *) exit 2 ;;
+esac
+EOF
+chmod +x /usr/local/etc/neko/services/ticker
+neko-service enable ticker
+neko-service start ticker
+neko-service status ticker
+neko-service stop ticker
+```
+
 Скрипты служб запускаются от root, поэтому добавляйте только доверенный код.
 Ошибка запуска отдельной службы выводит `SERVICE_FAILED:имя`, а консоль остаётся
 доступной; `neko-service status имя` показывает сбой текущей загрузки.
@@ -156,7 +178,7 @@ poweroff
 
 ### Пакеты
 
-NekoPkg устанавливает одну команду в сохраняемый `/usr/local`.
+NekoPkg устанавливает программы в сохраняемый `/usr/local`.
 В консоли `neko#` попробуйте встроенный пример:
 
 ```sh
@@ -172,6 +194,20 @@ neko-pkg remove neko-companion
 neko-pkg remove neko-greet
 ```
 
+Новый NekoPkg/3 переносит вместе с командой файлы программы, например ресурсы
+интерфейса. Встроенный пример показывает, что при обновлении команда и ресурс
+переходят на одну версию:
+
+```sh
+neko-pkg install /usr/share/nekoos/packages/neko-theme-1.0.0.npkg
+neko-theme
+cat /usr/local/share/neko-theme/message.txt
+neko-pkg upgrade /usr/share/nekoos/packages/neko-theme-1.1.0.npkg
+neko-theme
+neko-pkg verify neko-theme
+neko-pkg remove neko-theme
+```
+
 Установленная команда работает и после следующего запуска. Если она уже
 установлена, повторите `neko-greet` и `neko-pkg list` без новой установки.
 Установка требует обычного запуска с виртуальным диском, не `--ram`.
@@ -179,9 +215,11 @@ neko-pkg remove neko-greet
 команду с тем же именем. Новый формат NekoPkg/2 поддерживает требования к
 минимальной версии уже установленного пакета; зависимости сначала ставятся
 вручную. `upgrade` переключает команду на новую версию без промежутка,
-когда она недоступна. Если `neko-greet` уже установлен, начните с `list` и
-перейдите к обновлению. Пакет пока содержит один исполняемый файл;
-автоматической загрузки зависимостей и сетевых репозиториев ещё нет.
+когда она недоступна. Формат NekoPkg/3 также открывает файлы пакета под
+`/usr/local/share/ИМЯ` и `/usr/local/lib/ИМЯ`; обновление переключает их
+вместе с командой. Если `neko-greet` уже установлен, начните с `list` и
+перейдите к обновлению. Автоматической загрузки зависимостей и сетевых
+репозиториев ещё нет.
 Как собрать свой пакет и добавить его в образ, описано в
 [packages/README.md](packages/README.md).
 
@@ -239,6 +277,19 @@ bash os run --iso --system
 образы и не образы для UEFI.
 Физические диски компьютера не используются.
 
+### Графическая основа
+
+Для подготовки будущего интерфейса можно открыть окно виртуального
+видеоустройства:
+
+```bash
+bash os run --system --graphics
+```
+
+В NekoOS появятся виртуальная видеокарта и события клавиатуры и мыши.
+Командная строка `neko#` остаётся в терминале запуска; рабочего стола в окне
+пока нет. Проверка устройств без открытия окна: `bash os test --graphics`.
+
 ### Программа на C внутри NekoOS
 
 Сначала можно собрать готовый пример в консоли `neko#`:
@@ -283,6 +334,7 @@ musl. Файлы `hello.c` и `hello` останутся в `/root` после `
 | `bash os iso --system` | Создать BIOS ISO с системным диском как пунктом по умолчанию |
 | `bash os run` | Сборка и консоль с сохранением файлов |
 | `bash os run --system` | Загрузиться с сохраняемого системного ext4-диска |
+| `bash os run --graphics` | Открыть окно QEMU с виртуальным видео и устройствами ввода |
 | `bash os run --iso` | Сборка и запуск через виртуальный BIOS и GRUB |
 | `bash os run --iso --system` | Загрузиться через BIOS и GRUB с системного диска |
 | `bash os run --net` | Включить виртуальную сеть, DHCP и исходящие подключения |
@@ -296,14 +348,16 @@ musl. Файлы `hello.c` и `hello` останутся в `/root` после `
 | `bash os test --services` | Проверить сохранение настроек служб на отдельном временном диске |
 | `bash os test --system` | Две загрузки с отдельных временных системного и пользовательского дисков |
 | `bash os test --system-update` | Проверить обновление, сохранение настроек и откат на временных дисках |
+| `bash os test --graphics` | Проверить видеокарту и устройства ввода внутри гостя без окна |
 | `bash os test --package` | Проверить установку, зависимости, обновление и удаление на отдельном тестовом диске |
 | `bash os test --no-build` | Тест уже собранных файлов с проверкой их SHA256 |
 
 Результаты: `out/images/bzImage`, `initramfs.cpio.gz`,
 `bootstrap.cpio.gz`, `system-template.img`, `NekoOS.iso`, `NekoOS-system.iso`,
 конфигурации и контрольные суммы. Логи: `build/logs/build.log`, `serial.log`,
-`boot-test.log`, `disk-test-*.log`, `iso-test-*.log`, `iso-system-test-*.log`, `network-test.log`,
-`services-test-*.log`, `system-test-*.log`, `package-test-*.log`, `check-dev.log`.
+`boot-test.log`, `disk-test-*.log`, `iso-test-*.log`, `iso-system-test-*.log`,
+`network-test.log`, `graphics-test.log`, `services-test-*.log`,
+`system-test-*.log`, `package-test-*.log`, `check-dev.log`.
 Полный вывод сборки
 при `os run` также находится в `run-build.log`. Сборки, кэш, логи и
 виртуальные диски исключены из Git. **Не удаляйте `out/disks/state.img` или
@@ -332,3 +386,4 @@ musl. Файлы `hello.c` и `hello` останутся в `/root` после `
 [Проверка единой musl в базовой системе](docs/validation-musl-2026-09-26.md).
 [Проверка первого формата пакетов](docs/validation-packages-2026-09-26.md).
 [Проверка зависимостей и обновления](docs/validation-package-upgrades-2026-09-26.md).
+[Проверка многофайловых пакетов, служб и графических устройств](docs/validation-platform-2026-09-26.md).

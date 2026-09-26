@@ -7,6 +7,131 @@ enabled=/var/lib/neko-services/enabled
 disabled=/var/lib/neko-services/disabled
 failed=/run/neko/services
 
+# A script with this exact marker opts into foreground process management.
+# Its "run" action must exec a long-lived program without daemonizing.
+is_managed() {
+    grep -qx '# neko-service: foreground' "$service"
+}
+
+read_process() {
+    [ -r "/proc/$1/stat" ] || return 1
+    IFS= read -r stat_line < "/proc/$1/stat" || return 1
+    stat_tail=${stat_line##*) }
+    [ "$stat_tail" != "$stat_line" ] || return 1
+    set -- $stat_tail
+    [ "$#" -ge 20 ] || return 1
+    proc_state=$1
+    index=1
+    while [ "$index" -lt 20 ]; do
+        shift
+        index=$((index + 1))
+    done
+    proc_start=$1
+    [ "$proc_state" != Z ] && [ "$proc_state" != X ]
+}
+
+managed_alive() {
+    [ -f "$pidfile" ] && [ ! -L "$pidfile" ] || return 1
+    read -r saved_pid saved_start < "$pidfile" || return 1
+    case "$saved_pid:$saved_start" in
+        *[!0-9:]*|:*|*:) return 1 ;;
+    esac
+    [ "$saved_pid" -gt 1 ] || return 1
+    read_process "$saved_pid" && [ "$proc_start" = "$saved_start" ]
+}
+
+managed_start() {
+    if managed_alive; then
+        echo "$name: already running (pid $saved_pid)"
+        return 0
+    fi
+    rm -f "$pidfile" || return 1
+    ( exec 9>&-; exec "$service" run ) </dev/null >"$failed/$name.log" 2>&1 &
+    new_pid=$!
+    # Catch a run action that exits immediately rather than claiming it started.
+    sleep 1
+    if ! read_process "$new_pid"; then
+        echo "$name: failed to stay running (see $failed/$name.log)" >&2
+        return 1
+    fi
+    new_start=$proc_start
+    if ! printf '%s %s\n' "$new_pid" "$new_start" > "$pidfile.tmp.$$" ||
+       ! mv -f "$pidfile.tmp.$$" "$pidfile"; then
+        rm -f "$pidfile.tmp.$$"
+        if read_process "$new_pid" && [ "$proc_start" = "$new_start" ]; then
+            kill -TERM "$new_pid" 2>/dev/null || true
+        fi
+        echo "$name: could not save process state" >&2
+        return 1
+    fi
+    rm -f "$failed/$name.failed"
+    echo "$name: running (pid $new_pid)"
+}
+
+managed_stop() {
+    if ! managed_alive; then
+        rm -f "$pidfile"
+        echo "$name: stopped"
+        return 0
+    fi
+    target_pid=$saved_pid
+    target_start=$saved_start
+    kill -TERM "$target_pid" 2>/dev/null || true
+    attempts=0
+    while [ "$attempts" -lt 5 ]; do
+        if ! managed_alive; then
+            rm -f "$pidfile"
+            echo "$name: stopped"
+            return 0
+        fi
+        sleep 1
+        attempts=$((attempts + 1))
+    done
+    # Check the recorded process identity again before the forced stop.
+    if managed_alive && [ "$saved_pid" = "$target_pid" ] &&
+       [ "$saved_start" = "$target_start" ]; then
+        kill -KILL "$target_pid" 2>/dev/null || true
+        sleep 1
+    fi
+    if managed_alive; then
+        echo "$name: could not stop pid $target_pid" >&2
+        return 1
+    fi
+    rm -f "$pidfile"
+    echo "$name: stopped"
+}
+
+managed_action() {
+    name=$1
+    action=$2
+    mkdir -p "$failed" || return 1
+    pidfile=$failed/$name.pid
+    # The child closes fd 9 before exec, so it cannot hold the lifecycle lock.
+    exec 9>"$failed/$name.lock" || return 1
+    flock -x 9 || return 1
+    case "$action" in
+        start) managed_start ;;
+        stop) managed_stop ;;
+        restart) managed_stop && managed_start ;;
+        status)
+            if managed_alive; then
+                echo "$name: running (pid $saved_pid)"
+            else
+                echo "$name: stopped"
+                return 1
+            fi
+            ;;
+    esac
+}
+
+service_action() {
+    if is_managed; then
+        managed_action "$1" "$2"
+    else
+        "$service" "$2"
+    fi
+}
+
 usage() {
     echo 'Usage: neko-service {list [--all]|is-enabled|enable|disable|status|start|stop|restart} [service]' >&2
     exit 2
@@ -69,7 +194,7 @@ boot_one() {
         return
     fi
     echo "Starting service: $1"
-    if "$service" start; then
+    if service_action "$1" start; then
         rm -f "$failed/$1.failed"
     else
         touch "$failed/$1.failed"
@@ -131,17 +256,29 @@ case "${1:-}" in
         if is_enabled "$2"; then state=enabled; else state=disabled; fi
         echo "$2: autostart $state"
         [ ! -f "$failed/$2.failed" ] || echo "$2: last boot start failed"
-        exec "$service" status
+        if is_managed; then
+            managed_action "$2" status
+        else
+            exec "$service" status
+        fi
         ;;
     start|stop)
         [ "$#" -eq 2 ] || usage
         require_service "$2"
-        exec "$service" "$1"
+        if is_managed; then
+            managed_action "$2" "$1"
+        else
+            exec "$service" "$1"
+        fi
         ;;
     restart)
         [ "$#" -eq 2 ] || usage
         require_service "$2"
-        "$service" stop && exec "$service" start
+        if is_managed; then
+            managed_action "$2" restart
+        else
+            "$service" stop && exec "$service" start
+        fi
         ;;
     *) usage ;;
 esac
