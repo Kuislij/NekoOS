@@ -108,6 +108,9 @@ def validate(entries):
         entry(path, stat.S_ISREG, 'regular file')
     for path in ('usr/share/nekoos/examples/hello.c',
                  'usr/share/nekoos/packages/neko-greet-0.1.0.npkg',
+                 'usr/share/nekoos/packages/neko-greet-0.2.0.npkg',
+                 'usr/share/nekoos/packages/neko-greet-0.3.0.npkg',
+                 'usr/share/nekoos/packages/neko-companion-1.0.0.npkg',
                  'usr/include/stdio.h',
                  'usr/include/linux/version.h',
                  'usr/lib/libc.a', 'usr/lib/crt1.o', 'usr/lib/tcc/libtcc1.a'):

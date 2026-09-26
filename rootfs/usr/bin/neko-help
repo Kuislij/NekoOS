@@ -19,7 +19,11 @@ NekoOS 0.1 — краткая помощь
   neko-pkg info /usr/share/nekoos/packages/neko-greet-0.1.0.npkg
   neko-pkg install /usr/share/nekoos/packages/neko-greet-0.1.0.npkg
   neko-greet              Запустить установленный пакет (нужен диск)
+  neko-pkg upgrade /usr/share/nekoos/packages/neko-greet-0.2.0.npkg
+  neko-pkg install /usr/share/nekoos/packages/neko-companion-1.0.0.npkg
+  neko-companion          Запустить программу с зависимостью
   neko-pkg list           Показать установленные пакеты
+  neko-pkg remove neko-companion  Сначала удалить зависимый пакет
   neko-pkg remove neko-greet  Удалить пример пакета
   poweroff                Выключить виртуальную машину
 

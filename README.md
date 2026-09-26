@@ -76,15 +76,19 @@ neko-service status network
 
 ### Пакеты
 
-Первый формат NekoPkg устанавливает одну команду в сохраняемый `/usr/local`.
+NekoPkg устанавливает одну команду в сохраняемый `/usr/local`.
 В консоли `neko#` попробуйте встроенный пример:
 
 ```sh
 neko-pkg info /usr/share/nekoos/packages/neko-greet-0.1.0.npkg
 neko-pkg install /usr/share/nekoos/packages/neko-greet-0.1.0.npkg
 neko-greet
+neko-pkg upgrade /usr/share/nekoos/packages/neko-greet-0.2.0.npkg
+neko-pkg install /usr/share/nekoos/packages/neko-companion-1.0.0.npkg
+neko-companion
 neko-pkg list
 neko-pkg verify neko-greet
+neko-pkg remove neko-companion
 neko-pkg remove neko-greet
 ```
 
@@ -92,8 +96,12 @@ neko-pkg remove neko-greet
 установлена, повторите `neko-greet` и `neko-pkg list` без новой установки.
 Установка требует обычного запуска с виртуальным диском, не `--ram`.
 Менеджер отклоняет повреждённый архив, сверяет SHA-256 и не заменяет чужую
-команду с тем же именем. Сейчас пакет содержит один исполняемый файл;
-зависимости, обновление версии и сетевые репозитории ещё не реализованы.
+команду с тем же именем. Новый формат NekoPkg/2 поддерживает требования к
+минимальной версии уже установленного пакета; зависимости сначала ставятся
+вручную. `upgrade` переключает команду на новую версию без промежутка,
+когда она недоступна. Если `neko-greet` уже установлен, начните с `list` и
+перейдите к обновлению. Пакет пока содержит один исполняемый файл;
+автоматической загрузки зависимостей и сетевых репозиториев ещё нет.
 Как собрать свой пакет и добавить его в образ, описано в
 [packages/README.md](packages/README.md).
 
@@ -185,7 +193,7 @@ musl. Файлы `hello.c` и `hello` останутся в `/root` после `
 | `bash os test --disk` | Две загрузки с проверкой сохранённого файла |
 | `bash os test --iso` | Две загрузки ISO через BIOS и GRUB, проверка оборудования и данных |
 | `bash os test --net` | Проверить DHCP, DNS-настройку, ICMP и HTTP в QEMU |
-| `bash os test --package` | Проверить установку, сохранение и удаление пакета на отдельном тестовом диске |
+| `bash os test --package` | Проверить установку, зависимости, обновление и удаление на отдельном тестовом диске |
 | `bash os test --no-build` | Тест уже собранных файлов с проверкой их SHA256 |
 
 Результаты: `out/images/bzImage`, `initramfs.cpio.gz`, `NekoOS.iso`,
@@ -216,3 +224,4 @@ musl. Файлы `hello.c` и `hello` останутся в `/root` после `
 [Проверка локальных программ и служб](docs/validation-services-2026-09-25.md).
 [Проверка единой musl в базовой системе](docs/validation-musl-2026-09-26.md).
 [Проверка первого формата пакетов](docs/validation-packages-2026-09-26.md).
+[Проверка зависимостей и обновления](docs/validation-package-upgrades-2026-09-26.md).

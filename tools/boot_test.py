@@ -293,6 +293,9 @@ def boot_package(args):
     subprocess.run([sys.executable, str(ROOT / 'tools/validate_image.py'),
                     str(images / 'initramfs.cpio.gz')], check=True)
     demo = '/usr/share/nekoos/packages/neko-greet-0.1.0.npkg'
+    newer = '/usr/share/nekoos/packages/neko-greet-0.2.0.npkg'
+    newest = '/usr/share/nekoos/packages/neko-greet-0.3.0.npkg'
+    companion = '/usr/share/nekoos/packages/neko-companion-1.0.0.npkg'
     install = (
         f'neko-pkg info {demo} | grep -Fqx name=neko-greet && '
         f'head -c 64 {demo} > /tmp/broken.npkg && '
@@ -302,23 +305,51 @@ def boot_package(args):
         'test "$(cat /usr/local/bin/neko-greet)" = personal && '
         'rm /usr/local/bin/neko-greet && '
         f'neko-pkg install {demo} && neko-pkg verify neko-greet && '
+        'mv /usr/local/lib/neko-pkg/store/neko-greet@0.1.0 '
+        '/usr/local/lib/neko-pkg/store/neko-greet && '
+        'rm /usr/local/bin/neko-greet && '
+        'ln -s /usr/local/lib/neko-pkg/store/neko-greet/payload '
+        '/usr/local/bin/neko-greet && neko-pkg verify neko-greet && '
         "test \"$(neko-greet)\" = 'Hello from a NekoOS package' && "
         "neko-pkg list | grep -Fqx 'neko-greet 0.1.0' && "
         "printf '\\n%s%s\\n' 'PACKAGE_' 'INSTALLED' && poweroff || poweroff\n"
     ).encode('ascii')
-    verify_remove = (
+    dependencies = (
         'neko-pkg verify neko-greet && '
         "test \"$(neko-greet)\" = 'Hello from a NekoOS package' && "
-        'cp /usr/local/lib/neko-pkg/store/neko-greet/payload /tmp/package-backup && '
-        "printf X >> /usr/local/lib/neko-pkg/store/neko-greet/payload && "
+        f'neko-pkg info {companion} | grep -Fqx "depends=neko-greet>=0.2.0" && '
+        f'if neko-pkg install {companion}; then false; else true; fi && '
+        f'neko-pkg upgrade {newer} && neko-pkg verify neko-greet && '
+        "test \"$(neko-greet)\" = 'Hello from NekoOS package v2' && "
+        f'if neko-pkg upgrade {newer}; then false; else true; fi && '
+        f'if neko-pkg upgrade {demo}; then false; else true; fi && '
+        'cp /usr/local/lib/neko-pkg/store/neko-greet@0.2.0/payload /tmp/provider-backup && '
+        'printf X >> /usr/local/lib/neko-pkg/store/neko-greet@0.2.0/payload && '
+        f'if neko-pkg install {companion}; then false; else true; fi && '
+        'cp /tmp/provider-backup /usr/local/lib/neko-pkg/store/neko-greet@0.2.0/payload && '
+        f'neko-pkg install {companion} && neko-pkg verify neko-companion && '
+        "neko-companion | grep -Fqx 'Companion is ready' && "
+        "neko-pkg list | grep -Fqx 'neko-greet 0.2.0' && "
+        "neko-pkg list | grep -Fqx 'neko-companion 1.0.0' && "
+        "printf '\\n%s%s\\n' 'PACKAGE_' 'DEPENDENCY' && poweroff || poweroff\n"
+    ).encode('ascii')
+    upgrade_remove = (
+        'neko-pkg verify neko-greet && neko-pkg verify neko-companion && '
+        'if neko-pkg remove neko-greet; then false; else true; fi && '
+        f'neko-pkg upgrade {newest} && '
+        "test \"$(neko-greet)\" = 'Hello from NekoOS package v3' && "
+        "neko-companion | grep -Fqx 'Companion is ready' && "
+        'cp /usr/local/lib/neko-pkg/store/neko-greet@0.3.0/payload /tmp/package-backup && '
+        'printf X >> /usr/local/lib/neko-pkg/store/neko-greet@0.3.0/payload && '
         'if neko-pkg verify neko-greet; then false; else true; fi && '
-        'cp /tmp/package-backup /usr/local/lib/neko-pkg/store/neko-greet/payload && '
-        'neko-pkg verify neko-greet && neko-pkg remove neko-greet && '
+        'cp /tmp/package-backup /usr/local/lib/neko-pkg/store/neko-greet@0.3.0/payload && '
+        'neko-pkg verify neko-greet && '
+        'neko-pkg remove neko-companion && neko-pkg remove neko-greet && '
         'test ! -e /usr/local/bin/neko-greet && '
         'test -z "$(neko-pkg list)" && '
         'mkdir /usr/local/lib/neko-pkg/store/.stage-interrupted && '
         'mkdir /usr/local/lib/neko-pkg/store/orphan-pkg && '
-        "printf '\\n%s%s\\n' 'PACKAGE_' 'REMOVED' && poweroff || poweroff\n"
+        "printf '\\n%s%s\\n' 'PACKAGE_' 'UPGRADED' && poweroff || poweroff\n"
     ).encode('ascii')
     clean = (
         'test ! -e /usr/local/bin/neko-greet && '
@@ -332,11 +363,12 @@ def boot_package(args):
         subprocess.run(['qemu-img', 'create', '-f', 'raw', str(disk), '128M'], check=True)
         subprocess.run(['mkfs.ext4', '-F', '-q', str(disk)], check=True)
         for number, command, marker in ((1, install, 'PACKAGE_INSTALLED'),
-                                        (2, verify_remove, 'PACKAGE_REMOVED'),
-                                        (3, clean, 'PACKAGE_CLEAN')):
+                                        (2, dependencies, 'PACKAGE_DEPENDENCY'),
+                                        (3, upgrade_remove, 'PACKAGE_UPGRADED'),
+                                        (4, clean, 'PACKAGE_CLEAN')):
             run_disk_guest(images, disk, command, marker, number, args.timeout,
                            False, log_prefix='package')
-    print('PACKAGE_TEST_PASSED: install, integrity, persistence, remove and cleanup')
+    print('PACKAGE_TEST_PASSED: legacy upgrade, dependencies, integrity and cleanup')
     return 0
 
 

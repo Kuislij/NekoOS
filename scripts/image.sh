@@ -41,9 +41,19 @@ install -m 755 "$root/rootfs/usr/bin/neko-pkg" "$stage/usr/bin/neko-pkg"
 install -m 755 "$root/rootfs/usr/share/udhcpc/default.script" "$stage/usr/share/udhcpc/default.script"
 install -m 644 "$root/rootfs/usr/share/nekoos/examples/hello.c" \
     "$stage/usr/share/nekoos/examples/hello.c"
-python3 "$root/tools/make_package.py" --name neko-greet --version 0.1.0 \
+python3 "$root/tools/make_package.py" --format 1 --name neko-greet --version 0.1.0 \
     --license NOASSERTION --file "$root/packages/examples/neko-greet.sh" \
     --output "$stage/usr/share/nekoos/packages/neko-greet-0.1.0.npkg"
+python3 "$root/tools/make_package.py" --name neko-greet --version 0.2.0 \
+    --license NOASSERTION --file "$root/packages/examples/neko-greet-v2.sh" \
+    --output "$stage/usr/share/nekoos/packages/neko-greet-0.2.0.npkg"
+python3 "$root/tools/make_package.py" --name neko-greet --version 0.3.0 \
+    --license NOASSERTION --file "$root/packages/examples/neko-greet-v3.sh" \
+    --output "$stage/usr/share/nekoos/packages/neko-greet-0.3.0.npkg"
+python3 "$root/tools/make_package.py" --name neko-companion --version 1.0.0 \
+    --license NOASSERTION --depends 'neko-greet>=0.2.0' \
+    --file "$root/packages/examples/neko-companion.sh" \
+    --output "$stage/usr/share/nekoos/packages/neko-companion-1.0.0.npkg"
 for archive in "$root"/packages/local/*.npkg; do
     [[ -e "$archive" || -L "$archive" ]] || continue
     [[ -f "$archive" && ! -L "$archive" ]] || die "Local package must be a regular file: $archive"

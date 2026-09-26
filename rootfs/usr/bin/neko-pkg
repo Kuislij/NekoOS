@@ -1,33 +1,95 @@
 #!/bin/sh
-# NekoPkg/1 installs one verified executable into the persistent /usr/local.
+# NekoPkg/1 and /2: verified single-command packages on persistent /usr/local.
 set -eu
 base=/usr/local/lib/neko-pkg
 store=$base/store
 bin=/usr/local/bin
 stage=
+temporary_link=
 
 die() { echo "neko-pkg: $*" >&2; exit 1; }
 usage() {
-    echo 'Usage: neko-pkg {list|info FILE.npkg|info NAME|install FILE.npkg|verify NAME|remove NAME}'
+    echo 'Usage: neko-pkg {list|info FILE.npkg|info NAME|install FILE.npkg|upgrade FILE.npkg|verify NAME|remove NAME}'
 }
 valid_name() {
     [ "${#1}" -le 64 ] || return 1
     case "$1" in [a-z]*) ;; *) return 1 ;; esac
     case "$1" in *[!a-z0-9-]*) return 1 ;; esac
 }
+valid_legacy_version() {
+    [ "${#1}" -le 64 ] || return 1
+    case "$1" in [0-9]*) ;; *) return 1 ;; esac
+    case "$1" in *[!A-Za-z0-9.+-]*) return 1 ;; esac
+}
+valid_number() {
+    case "$1" in ''|0[0-9]*|*[!0-9]*) return 1 ;; esac
+    [ "${#1}" -le 4 ]
+}
+parse_semver() {
+    local value=$1 rest
+    case "$value" in *.*.*) ;; *) return 1 ;; esac
+    v_major=${value%%.*}
+    rest=${value#*.}
+    v_minor=${rest%%.*}
+    v_patch=${rest#*.}
+    case "$v_patch" in *.*) return 1 ;; esac
+    valid_number "$v_major" && valid_number "$v_minor" && valid_number "$v_patch"
+}
+parse_numeric_version() {
+    local value=$1
+    case "$value" in *.*.*) ;; *.*) value=$value.0 ;; *) value=$value.0.0 ;; esac
+    parse_semver "$value"
+}
+version_ge() {
+    parse_numeric_version "$1" || return 1
+    local left_major=$v_major left_minor=$v_minor left_patch=$v_patch
+    parse_numeric_version "$2" || return 1
+    [ "$left_major" -gt "$v_major" ] && return 0
+    [ "$left_major" -lt "$v_major" ] && return 1
+    [ "$left_minor" -gt "$v_minor" ] && return 0
+    [ "$left_minor" -lt "$v_minor" ] && return 1
+    [ "$left_patch" -ge "$v_patch" ]
+}
+version_gt() {
+    version_ge "$1" "$2" && ! version_ge "$2" "$1"
+}
+split_dependency() {
+    case "$1" in *'>='*) ;; *) return 1 ;; esac
+    dep_name=${1%%>=*}
+    dep_version=${1#*>=}
+    valid_name "$dep_name" && parse_semver "$dep_version"
+}
+validate_dependencies() {
+    [ "$pkg_depends" = none ] && return 0
+    [ "${#pkg_depends}" -le 512 ] || return 1
+    local remaining=$pkg_depends token seen= count=0 previous
+    while [ -n "$remaining" ]; do
+        case "$remaining" in
+            *,*) token=${remaining%%,*}; remaining=${remaining#*,} ;;
+            *) token=$remaining; remaining= ;;
+        esac
+        split_dependency "$token" || return 1
+        [ "$dep_name" != "$pkg_name" ] || return 1
+        for previous in $seen; do [ "$previous" != "$dep_name" ] || return 1; done
+        seen="$seen $dep_name"
+        count=$((count + 1))
+        [ "$count" -le 8 ] || return 1
+    done
+    case "$pkg_depends" in *,) return 1 ;; esac
+}
 parse_manifest() {
     [ -f "$1" ] && [ ! -L "$1" ] || return 1
     line_no=0
-    pkg_name= pkg_version= pkg_license= pkg_size= pkg_sha=
+    pkg_format= pkg_name= pkg_version= pkg_license= pkg_depends= pkg_size= pkg_sha=
     while IFS= read -r line || [ -n "$line" ]; do
         line_no=$((line_no + 1))
         case "$line_no" in
-            1) [ "$line" = NEKOPKG/1 ] || return 1 ;;
+            1) case "$line" in NEKOPKG/1) pkg_format=1 ;; NEKOPKG/2) pkg_format=2 ;; *) return 1 ;; esac ;;
             2) case "$line" in name=*) pkg_name=${line#name=} ;; *) return 1 ;; esac ;;
             3) case "$line" in version=*) pkg_version=${line#version=} ;; *) return 1 ;; esac ;;
             4) [ "$line" = arch=x86_64 ] || return 1 ;;
             5) case "$line" in license=*) pkg_license=${line#license=} ;; *) return 1 ;; esac ;;
-            6) [ "$line" = depends=none ] || return 1 ;;
+            6) case "$line" in depends=*) pkg_depends=${line#depends=} ;; *) return 1 ;; esac ;;
             7) [ "$line" = "path=/usr/local/bin/$pkg_name" ] || return 1 ;;
             8) case "$line" in size=*) pkg_size=${line#size=} ;; *) return 1 ;; esac ;;
             9) case "$line" in sha256=*) pkg_sha=${line#sha256=} ;; *) return 1 ;; esac ;;
@@ -35,9 +97,12 @@ parse_manifest() {
         esac
     done < "$1"
     [ "$line_no" -eq 9 ] && valid_name "$pkg_name" || return 1
-    [ "${#pkg_version}" -le 64 ] || return 1
-    case "$pkg_version" in [0-9]*) ;; *) return 1 ;; esac
-    case "$pkg_version" in *[!A-Za-z0-9.+-]*) return 1 ;; esac
+    valid_legacy_version "$pkg_version" || return 1
+    if [ "$pkg_format" = 1 ]; then
+        [ "$pkg_depends" = none ] || return 1
+    else
+        parse_semver "$pkg_version" && validate_dependencies || return 1
+    fi
     [ "${#pkg_license}" -le 64 ] || return 1
     case "$pkg_license" in [A-Za-z0-9]*) ;; *) return 1 ;; esac
     case "$pkg_license" in *[!A-Za-z0-9.+-]*) return 1 ;; esac
@@ -86,39 +151,102 @@ lock_store() {
     exec 9> "$base/.lock"
     flock -x 9 || die 'cannot lock package store'
 }
+lookup_installed() {
+    valid_name "$1" && [ -L "$bin/$1" ] || return 1
+    current_target=$(readlink "$bin/$1") || return 1
+    current_entry=${current_target%/payload}
+    [ "$current_target" = "$current_entry/payload" ] || return 1
+    case "$current_entry" in "$store/$1"|"$store/$1@"*) ;; *) return 1 ;; esac
+    [ -d "$current_entry" ] && [ ! -L "$current_entry" ] || return 1
+    parse_manifest "$current_entry/manifest" || return 1
+    [ "$pkg_name" = "$1" ] && [ -f "$current_entry/payload" ] || return 1
+    case "$current_entry" in
+        "$store/$1") [ "$pkg_format" = 1 ] ;;
+        "$store/$1@$pkg_version") return 0 ;;
+        *) return 1 ;;
+    esac
+}
 repair_store() {
     for entry in "$store"/.stage-*; do
         [ -e "$entry" ] || [ -L "$entry" ] || continue
         rm -rf -- "$entry"
     done
+    for link in "$bin"/.neko-pkg-*; do
+        [ -L "$link" ] && rm -- "$link"
+    done
     for entry in "$store"/*; do
         [ -d "$entry" ] && [ ! -L "$entry" ] || continue
-        installed=${entry##*/}
-        valid_name "$installed" || continue
-        expected=$store/$installed/payload
-        if [ ! -L "$bin/$installed" ] ||
-           [ "$(readlink "$bin/$installed")" != "$expected" ] ||
-           [ ! -f "$entry/manifest" ] || [ ! -f "$entry/payload" ]; then
-            if [ -L "$bin/$installed" ] &&
-               [ "$(readlink "$bin/$installed")" = "$expected" ]; then
-                rm -- "$bin/$installed"
+        candidate=${entry##*/}
+        name=${candidate%%@*}
+        valid_name "$name" || continue
+        if [ ! -L "$bin/$name" ] ||
+           [ "$(readlink "$bin/$name")" != "$entry/payload" ] ||
+           ! lookup_installed "$name"; then
+            if [ -L "$bin/$name" ] &&
+               [ "$(readlink "$bin/$name")" = "$entry/payload" ]; then
+                rm -- "$bin/$name"
             fi
             rm -rf -- "$entry"
         fi
     done
 }
+check_dependencies() (
+    remaining=$pkg_depends
+    [ "$remaining" = none ] && exit 0
+    while [ -n "$remaining" ]; do
+        case "$remaining" in
+            *,*) token=${remaining%%,*}; remaining=${remaining#*,} ;;
+            *) token=$remaining; remaining= ;;
+        esac
+        split_dependency "$token" || exit 1
+        required_name=$dep_name required_version=$dep_version
+        lookup_installed "$required_name" || die "missing dependency: $required_name >= $required_version"
+        check_payload "$current_entry/payload" || die "dependency $required_name is damaged"
+        version_ge "$pkg_version" "$required_version" ||
+            die "dependency $required_name must be >= $required_version (installed: $pkg_version)"
+    done
+)
+check_dependents() (
+    target_name=$1 replacement_version=$2
+    for entry in "$store"/*; do
+        [ -d "$entry" ] && [ ! -L "$entry" ] || continue
+        candidate=${entry##*/}
+        candidate=${candidate%%@*}
+        valid_name "$candidate" || continue
+        [ -L "$bin/$candidate" ] &&
+            [ "$(readlink "$bin/$candidate")" = "$entry/payload" ] || continue
+        lookup_installed "$candidate" || exit 1
+        [ "$pkg_name" = "$target_name" ] && continue
+        remaining=$pkg_depends
+        [ "$remaining" = none ] && continue
+        while [ -n "$remaining" ]; do
+            case "$remaining" in
+                *,*) token=${remaining%%,*}; remaining=${remaining#*,} ;;
+                *) token=$remaining; remaining= ;;
+            esac
+            split_dependency "$token" || exit 1
+            if [ "$dep_name" = "$target_name" ]; then
+                if [ -z "$replacement_version" ] ||
+                   ! version_ge "$replacement_version" "$dep_version"; then
+                    die "$candidate requires $target_name >= $dep_version"
+                fi
+            fi
+        done
+    done
+)
 show_info() {
     echo "name=$pkg_name"
     echo "version=$pkg_version"
     echo 'arch=x86_64'
     echo "license=$pkg_license"
-    echo 'depends=none'
+    echo "depends=$pkg_depends"
     echo "path=/usr/local/bin/$pkg_name"
     echo "size=$pkg_size"
     echo "sha256=$pkg_sha"
 }
 cleanup() {
     [ -z "$stage" ] || rm -rf -- "$stage"
+    [ -z "$temporary_link" ] || rm -f -- "$temporary_link"
 }
 trap cleanup 0
 
@@ -129,10 +257,12 @@ case "${1:-}" in
         repair_store
         for entry in "$store"/*; do
             [ -d "$entry" ] && [ ! -L "$entry" ] || continue
-            installed=${entry##*/}
-            valid_name "$installed" || continue
-            parse_manifest "$entry/manifest" || die "invalid manifest: $installed"
-            [ "$pkg_name" = "$installed" ] || die "wrong package name: $installed"
+            candidate=${entry##*/}
+            candidate=${candidate%%@*}
+            valid_name "$candidate" || continue
+            [ -L "$bin/$candidate" ] &&
+                [ "$(readlink "$bin/$candidate")" = "$entry/payload" ] || continue
+            lookup_installed "$candidate" || die "invalid installed package: $candidate"
             echo "$pkg_name $pkg_version"
         done
         ;;
@@ -146,9 +276,7 @@ case "${1:-}" in
             valid_name "$2" || die 'invalid package name'
             lock_store
             repair_store
-            [ -L "$bin/$2" ] || die 'package is not installed'
-            parse_manifest "$store/$2/manifest" || die 'invalid installed manifest'
-            [ "$pkg_name" = "$2" ] || die 'wrong installed package name'
+            lookup_installed "$2" || die 'package is not installed'
         fi
         show_info
         ;;
@@ -160,28 +288,64 @@ case "${1:-}" in
         stage=$store/.stage-$$
         mkdir "$stage" || die 'cannot create staging directory'
         verify_archive "$package" "$stage" || die 'invalid package archive or checksum'
+        check_dependencies || exit 1
         [ ! -e "$store/$pkg_name" ] && [ ! -L "$store/$pkg_name" ] || die 'package already installed'
         [ ! -e "$bin/$pkg_name" ] && [ ! -L "$bin/$pkg_name" ] || die 'command name is already in use'
         if command -v "$pkg_name" >/dev/null 2>&1; then
             die 'command name is already available in PATH'
         fi
-        mv -- "$stage" "$store/$pkg_name" || die 'cannot commit package data'
+        destination=$store/$pkg_name@$pkg_version
+        [ ! -e "$destination" ] && [ ! -L "$destination" ] || die 'package version already stored'
+        mv -- "$stage" "$destination" || die 'cannot commit package data'
         stage=
-        if ! ln -s "$store/$pkg_name/payload" "$bin/$pkg_name"; then
-            rm -rf -- "$store/$pkg_name"
+        if ! ln -s "$destination/payload" "$bin/$pkg_name"; then
+            rm -rf -- "$destination"
             die 'cannot expose package command'
         fi
         echo "Installed $pkg_name $pkg_version"
+        ;;
+    upgrade)
+        [ "$#" -eq 2 ] || die 'Usage: neko-pkg upgrade FILE.npkg'
+        package=$2
+        lock_store
+        repair_store
+        stage=$store/.stage-$$
+        mkdir "$stage" || die 'cannot create staging directory'
+        verify_archive "$package" "$stage" || die 'invalid package archive or checksum'
+        [ "$pkg_format" = 2 ] || die 'upgrade requires a NekoPkg/2 archive'
+        new_name=$pkg_name new_version=$pkg_version
+        check_dependencies || exit 1
+        lookup_installed "$new_name" || die 'package is not installed; use install'
+        old_entry=$current_entry old_version=$pkg_version
+        version_gt "$new_version" "$old_version" || die 'new version must be greater than installed version'
+        check_dependents "$new_name" "$new_version" || exit 1
+        destination=$store/$new_name@$new_version
+        [ ! -e "$destination" ] && [ ! -L "$destination" ] || die 'package version already stored'
+        mv -- "$stage" "$destination" || die 'cannot commit new package data'
+        stage=
+        temporary_link=$bin/.neko-pkg-$new_name-$$
+        if ! ln -s "$destination/payload" "$temporary_link"; then
+            rm -rf -- "$destination"
+            die 'cannot prepare new command link'
+        fi
+        if ! mv -fT -- "$temporary_link" "$bin/$new_name"; then
+            rm -f -- "$temporary_link"
+            temporary_link=
+            rm -rf -- "$destination"
+            die 'cannot switch package version'
+        fi
+        temporary_link=
+        rm -rf -- "$old_entry" || die 'upgraded, but old version cleanup failed; rerun list'
+        echo "Upgraded $new_name $old_version -> $new_version"
         ;;
     verify)
         [ "$#" -eq 2 ] || die 'Usage: neko-pkg verify NAME'
         valid_name "$2" || die 'invalid package name'
         lock_store
         repair_store
-        [ -L "$bin/$2" ] || die 'package is not installed'
-        parse_manifest "$store/$2/manifest" || die 'invalid installed manifest'
-        [ "$pkg_name" = "$2" ] || die 'wrong installed package name'
-        check_payload "$store/$2/payload" || die 'installed file has changed'
+        lookup_installed "$2" || die 'package is not installed'
+        check_payload "$current_entry/payload" || die 'installed file has changed'
+        check_dependencies || exit 1
         echo "Verified $pkg_name $pkg_version"
         ;;
     remove)
@@ -189,11 +353,11 @@ case "${1:-}" in
         valid_name "$2" || die 'invalid package name'
         lock_store
         repair_store
-        [ -L "$bin/$2" ] || die 'package is not installed'
-        expected=$store/$2/payload
-        [ "$(readlink "$bin/$2")" = "$expected" ] || die 'command is not owned by this package'
+        lookup_installed "$2" || die 'package is not installed'
+        old_entry=$current_entry
+        check_dependents "$2" '' || exit 1
         rm -- "$bin/$2" || die 'cannot remove command link'
-        rm -rf -- "$store/$2" || die 'cannot remove package data'
+        rm -rf -- "$old_entry" || die 'cannot remove package data'
         echo "Removed $2"
         ;;
     help|-h|--help|'') usage ;;
