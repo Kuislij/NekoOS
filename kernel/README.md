@@ -5,5 +5,5 @@ serial console, два CPU (SMP), локальный APIC и прерывани�
 ELF/scripts, proc/sys/devtmpfs/tmpfs, ACPI, virtio-blk, ext4 и сетевой стек
 IPv4/TCP/UDP/ICMP с virtio-net. Сетевая карта подключается только с `--net`.
 Фрагмент применяется через KCONFIG_ALLCONFIG + allnoconfig; полный результат
-сохраняется в `out/images/kernel.config`. Модули и сеть пока выключены.
+сохраняется в `out/images/kernel.config`. Модули выключены.
 Версия, URL и SHA256 находятся в `configs/sources.sh`.

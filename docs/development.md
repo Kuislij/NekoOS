@@ -73,12 +73,14 @@ QEMU TCG, 1 CPU и 256 МБ гостевой RAM; вложенная KVM не н
 не гарантируется. Извлечённые исходники — локальный рабочий кэш; не менять
 их вручную вместо project patches.
 
-Сборка BusyBox 1.37.0 на GCC 15/glibc 2.43 выдаёт upstream warnings о const;
+Сборка BusyBox 1.37.0 на GCC 15 выдаёт upstream warnings о const;
 сборка и гостевой тест проходят. Это не готовый daily-driver userspace.
-TinyCC собирается статически host GCC, но ищет заголовки и библиотеки
-musl по гостевым путям `/usr/include` и `/usr/lib`. `make headers_install`
-создаёт заголовки Linux UAPI. Всё устанавливается сначала в
-`build/toolchain-root/`, затем попадает в initramfs; host `/usr` не меняется.
+`make headers_install` создаёт заголовки Linux UAPI. musl и заголовки
+устанавливаются в `build/toolchain-root/`; затем host GCC использует
+созданный из musl specs файл `build/host-musl-gcc.specs` для статической
+сборки BusyBox и TinyCC. TinyCC ищет заголовки и библиотеки для гостевых
+программ по `/usr/include` и `/usr/lib`. Всё попадает в initramfs;
+host `/usr` не меняется.
 
 WSL сообщает о невозможности подключить диск E:. Он не используется проектом;
 сборка работает в Linux filesystem. Настройки этого диска не изменялись.

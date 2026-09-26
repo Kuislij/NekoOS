@@ -57,6 +57,11 @@ for option in CONFIG_SMP CONFIG_X86_LOCAL_APIC CONFIG_X86_IO_APIC CONFIG_ACPI \
 done
 grep -Fqx 'CONFIG_NR_CPUS=2' "$kout/.config" || die 'Kernel must support two virtual CPUs.'
 make -C "$kernel" O="$kout" ARCH=x86_64 -j"$jobs" bzImage
+bash "$root/scripts/toolchain.sh"
+compiler_id="musl-$MUSL_VERSION"
+if [[ -e "$bout/busybox" && "$(cat "$bout/.neko-compiler" 2>/dev/null || true)" != "$compiler_id" ]]; then
+    make -C "$busybox" O="$bout" clean
+fi
 make -C "$busybox" O="$bout" allnoconfig
 # BusyBox's older Kconfig resets booleans during allnoconfig. Apply our
 # selection afterward, then accept defaults only for newly enabled dependencies.
@@ -67,9 +72,9 @@ while IFS= read -r option; do
     printf '%s\n' "$option" >> "$bout/.config"
 done < "$root/configs/busybox.config"
 make -C "$busybox" O="$bout" oldconfig < <(yes '')
-make -C "$busybox" O="$bout" -j"$jobs"
+make -C "$busybox" O="$bout" CC="$root/scripts/host-musl-gcc.sh" -j"$jobs"
+printf '%s\n' "$compiler_id" > "$bout/.neko-compiler"
 if readelf -l "$bout/busybox" | grep -q INTERP; then die 'BusyBox must be statically linked.'; fi
-bash "$root/scripts/toolchain.sh"
 fakeroot bash "$root/scripts/image.sh" "$bout/busybox"
 install -m 644 "$kout/arch/x86/boot/bzImage" "$root/out/images/bzImage.new"
 mv "$root/out/images/bzImage.new" "$root/out/images/bzImage"

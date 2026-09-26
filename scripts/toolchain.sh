@@ -17,7 +17,19 @@ if [[ ! -f "$musl/.neko-configured" ]]; then
     touch "$musl/.neko-configured"
 fi
 make -C "$musl" -j"$jobs"
+# Stage musl before compiling the guest utilities. The generated specs point
+# at this exact staging tree, while installed guest specs retain /usr paths.
+rm -rf -- "$stage"
+mkdir -p "$stage"
+make -C "$kernel" O="$kout" ARCH=x86_64 \
+    INSTALL_HDR_PATH="$stage/usr" headers_install
+make -C "$musl" DESTDIR="$stage" install
+sed -e "s@/usr/include@$stage/usr/include@g" \
+    -e "s@/usr/lib@$stage/usr/lib@g" \
+    "$stage/usr/lib/musl-gcc.specs" > "$root/build/host-musl-gcc.specs"
+[[ -s "$root/build/host-musl-gcc.specs" ]] || die 'Host musl compiler specs are missing.'
 tcc_options=(--prefix=/usr --config-musl --extra-ldflags=-static
+    --cc="$root/scripts/host-musl-gcc.sh"
     --elfinterp=/lib/ld-musl-x86_64.so.1 --crtprefix=/usr/lib
     --libpaths=/usr/lib:/lib '--sysincludepaths={B}/include:/usr/include')
 tcc_config="$(printf '%s\n' "${tcc_options[@]}")"
@@ -27,12 +39,6 @@ if [[ ! -f "$tcc/.neko-configured" || "$(cat "$tcc/.neko-configured")" != "$tcc_
     printf '%s\n' "$tcc_config" > "$tcc/.neko-configured"
 fi
 make -C "$tcc" -j"$jobs"
-# This generated directory is separate from the saved virtual disk.
-rm -rf -- "$stage"
-mkdir -p "$stage"
-make -C "$kernel" O="$kout" ARCH=x86_64 \
-    INSTALL_HDR_PATH="$stage/usr" headers_install
-make -C "$musl" DESTDIR="$stage" install
 make -C "$tcc" DESTDIR="$stage" install
 [[ -x "$stage/usr/bin/tcc" && -f "$stage/usr/lib/libc.a" &&
    -f "$stage/usr/include/stdio.h" && -f "$stage/usr/include/linux/version.h" ]] ||
