@@ -27,7 +27,7 @@ case "${1:-}" in
     *) echo 'Usage: bootstrap-dev.sh [--install]' >&2; exit 2 ;;
 esac
 missing=0
-for tool in gcc make ninja git qemu-system-x86_64 qemu-img mkfs.ext4 blkid \
+for tool in gcc make ninja git qemu-system-x86_64 qemu-img mkfs.ext4 mke2fs blkid \
     timeout tee curl xz bzip2 \
     cpio fakeroot bc bison flex python3 sha256sum gzip readelf flock gpg gpgv; do
     if command -v "$tool" >/dev/null 2>&1; then

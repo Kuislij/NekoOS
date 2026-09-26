@@ -80,5 +80,5 @@ install -m 644 "$kout/arch/x86/boot/bzImage" "$root/out/images/bzImage.new"
 mv "$root/out/images/bzImage.new" "$root/out/images/bzImage"
 cp "$kout/.config" "$root/out/images/kernel.config"
 cp "$bout/.config" "$root/out/images/busybox.config"
-(cd "$root/out/images"; sha256sum bzImage initramfs.cpio.gz > SHA256SUMS)
-echo 'BUILD_READY: out/images/bzImage and initramfs.cpio.gz'
+(cd "$root/out/images"; sha256sum bzImage initramfs.cpio.gz bootstrap.cpio.gz system-template.img > SHA256SUMS)
+echo 'BUILD_READY: kernel, initramfs, bootstrap and system template'

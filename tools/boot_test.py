@@ -23,6 +23,7 @@ def main():
     parser.add_argument('--net', action='store_true', help='verify DHCP, loopback and HTTP over virtio-net')
     parser.add_argument('--package', action='store_true', help='install and remove a package on a disposable disk')
     parser.add_argument('--services', action='store_true', help='verify persistent service settings on a disposable disk')
+    parser.add_argument('--system', action='store_true', help='boot a writable system root across two boots')
     parser.add_argument('--timeout', type=int, default=90, help='boot deadline in seconds')
     args = parser.parse_args()
     if args.timeout < 1:
@@ -35,10 +36,14 @@ def main():
         parser.error('--package cannot be combined with --disk, --iso or --net')
     if args.services and (args.disk or args.iso or args.net or args.package):
         parser.error('--services cannot be combined with other test modes')
+    if args.system and (args.disk or args.iso or args.net or args.package or args.services):
+        parser.error('--system cannot be combined with other test modes')
     if sys.platform != 'linux' or os.geteuid() == 0:
         parser.error('run as a regular Linux / WSL2 user')
     (ROOT / 'build').mkdir(exist_ok=True)
-    if args.services:
+    if args.system:
+        lock_name = '.system-test.lock'
+    elif args.services:
         lock_name = '.services-test.lock'
     elif args.package:
         lock_name = '.package-test.lock'
@@ -53,6 +58,8 @@ def main():
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             raise RuntimeError('Another boot test is already running') from None
+        if args.system:
+            return boot_system(args)
         if args.services:
             return boot_services(args)
         if args.package:
@@ -446,8 +453,51 @@ def boot_services(args):
     return 0
 
 
+def boot_system(args):
+    if not args.no_build:
+        subprocess.run(['bash', str(ROOT / 'scripts/build.sh')], check=True)
+    images = ROOT / 'out/images'
+    subprocess.run(['sha256sum', '-c', 'SHA256SUMS'], cwd=images, check=True)
+    subprocess.run([sys.executable, str(ROOT / 'tools/validate_image.py'),
+                    str(images / 'initramfs.cpio.gz')], check=True)
+    first = (
+        "grep -q ' / ext4 ' /proc/mounts && "
+        "test -b /dev/vda && test -b /dev/vdb && "
+        "test -x /usr/bin/cc && "
+        "printf system-disk > /etc/neko/system-disk-test && "
+        "printf state-disk > /root/system-state-test && "
+        "sync && printf '\\n%s%s\\n' 'SYSTEM_' 'WRITTEN' && poweroff || poweroff\n"
+    ).encode('ascii')
+    second = (
+        "test \"$(cat /etc/neko/system-disk-test)\" = system-disk && "
+        "test \"$(cat /root/system-state-test)\" = state-disk && "
+        "cc /usr/share/nekoos/examples/hello.c -o /root/system-hello && "
+        "/root/system-hello | grep -Fqx 'Hello from NekoOS' && "
+        "rm /etc/neko/system-disk-test /root/system-state-test /root/system-hello && "
+        "sync && printf '\\n%s%s\\n' 'SYSTEM_' 'PERSISTED' && poweroff || poweroff\n"
+    ).encode('ascii')
+    with tempfile.TemporaryDirectory(prefix='system-test-', dir=ROOT / 'build') as directory:
+        system_disk = Path(directory) / 'system.img'
+        state_disk = Path(directory) / 'state.img'
+        subprocess.run(['cp', '--sparse=always', str(images / 'system-template.img'),
+                        str(system_disk)], check=True)
+        subprocess.run(['qemu-img', 'create', '-f', 'raw', str(state_disk), '128M'], check=True)
+        subprocess.run(['mkfs.ext4', '-F', '-q', str(state_disk)], check=True)
+        for number, command, marker in ((1, first, 'SYSTEM_WRITTEN'),
+                                        (2, second, 'SYSTEM_PERSISTED')):
+            run_disk_guest(images, state_disk, command, marker, number, args.timeout,
+                           False, log_prefix='system', network=True,
+                           system_disk=system_disk)
+            log = (ROOT / 'build/logs' / f'system-test-{number}.log').read_text(
+                errors='replace')
+            if 'NETWORK_READY' not in log:
+                raise RuntimeError('Network did not start from the system disk')
+    print('SYSTEM_TEST_PASSED: disk root and both filesystems survived poweroff')
+    return 0
+
+
 def run_disk_guest(images, disk, guest_command, marker, pass_number, timeout, iso,
-                   log_prefix=None, network=False):
+                   log_prefix=None, network=False, system_disk=None):
     prefix = log_prefix or ('iso' if iso else 'disk')
     log = ROOT / 'build/logs' / f'{prefix}-test-{pass_number}.log'
     log.parent.mkdir(parents=True, exist_ok=True)
@@ -457,8 +507,10 @@ def run_disk_guest(images, disk, guest_command, marker, pass_number, timeout, is
         '-display', 'none', '-monitor', 'none', '-serial', 'stdio',
         '-nic', ('user,model=virtio-net-pci,ipv6=off' if network else 'none'),
         '-no-reboot',
-        '-drive', f'file={disk},format=raw,if=virtio',
     ]
+    if system_disk is not None:
+        command += ['-drive', f'file={system_disk},format=raw,if=virtio']
+    command += ['-drive', f'file={disk},format=raw,if=virtio']
     if iso:
         command += ['-drive', f'file={images / "NekoOS.iso"},media=cdrom,if=ide',
                     '-boot', 'order=d']
@@ -467,9 +519,11 @@ def run_disk_guest(images, disk, guest_command, marker, pass_number, timeout, is
         guest_command = hardware_check + guest_command.rstrip(b'\n') + b' || poweroff\n'
     else:
         command += ['-kernel', str(images / 'bzImage'),
-                    '-initrd', str(images / 'initramfs.cpio.gz'),
+                    '-initrd', str(images / ('bootstrap.cpio.gz' if system_disk
+                                             else 'initramfs.cpio.gz')),
                     '-append', 'console=ttyS0,115200 rdinit=/init panic=-1 '
-                               'neko.state=required']
+                               'neko.state=required' +
+                               (' neko.system=required' if system_disk else '')]
     with log.open('wb') as output:
         process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=output,
                                    stderr=subprocess.STDOUT)
@@ -488,6 +542,7 @@ def run_disk_guest(images, disk, guest_command, marker, pass_number, timeout, is
                 if code is not None:
                     lines = log.read_text(errors='replace').replace('\r', '').splitlines()
                     if (code == 0 and sent and marker in lines
+                            and (system_disk is None or 'SYSTEM_DISK_READY' in lines)
                             and (not iso or ('NEKO_BOOTLOADER_READY' in content
                                              and 'HARDWARE_READY' in lines))
                             and any('Power down' in line for line in lines)):

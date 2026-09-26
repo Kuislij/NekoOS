@@ -80,3 +80,34 @@ find "$stage" -exec touch -h -d "@$SOURCE_DATE_EPOCH" {} +
 gzip -t "$root/out/images/initramfs.cpio.gz.new"
 mv "$root/out/images/initramfs.cpio.gz.new" "$root/out/images/initramfs.cpio.gz"
 python3 "$root/tools/validate_image.py" "$root/out/images/initramfs.cpio.gz"
+
+# A small first-stage image mounts the writable system disk and switch_roots.
+bootstrap="$root/build/bootstrap-rootfs"
+[[ ! -L "$bootstrap" ]] || die 'Bootstrap staging directory must not be a symlink.'
+rm -rf -- "$bootstrap"
+mkdir -p "$bootstrap"/{bin,dev,proc,sys,sysroot}
+install -m 755 "$1" "$bootstrap/bin/busybox"
+ln -s busybox "$bootstrap/bin/sh"
+install -m 755 "$root/rootfs/early-init" "$bootstrap/init"
+mknod -m 600 "$bootstrap/dev/console" c 5 1
+mknod -m 666 "$bootstrap/dev/null" c 1 3
+find "$bootstrap" -exec touch -h -d "@$SOURCE_DATE_EPOCH" {} +
+(
+    cd "$bootstrap"
+    find . -print0 | sort -z | cpio --null -o --format=newc --owner=0:0 --reproducible | gzip -n -9
+) > "$root/out/images/bootstrap.cpio.gz.new"
+gzip -t "$root/out/images/bootstrap.cpio.gz.new"
+mv "$root/out/images/bootstrap.cpio.gz.new" "$root/out/images/bootstrap.cpio.gz"
+
+# Build a template under the same fakeroot process as the staged rootfs so
+# its ownership, permissions and device entries survive into ext4.
+template="$root/out/images/system-template.img"
+[[ ! -L "$template" && ! -L "$template.new" ]] || die 'System image output must not be a symlink.'
+rm -f -- "$template.new"
+qemu-img create -f raw "$template.new" 256M
+E2FSPROGS_FAKE_TIME="$SOURCE_DATE_EPOCH" mke2fs -t ext4 -F -q -m 0 \
+    -L NEKO_SYSTEM -U 4e454b4f-4f53-4000-8000-000000000001 \
+    -d "$stage" "$template.new"
+[[ "$(blkid -p -s TYPE -o value "$template.new")" == ext4 ]] || die 'System template is not ext4.'
+mv "$template.new" "$template"
+echo "SYSTEM_TEMPLATE_READY: $template"

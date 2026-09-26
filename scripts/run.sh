@@ -5,16 +5,19 @@ quiet='quiet loglevel=4'
 mode=disk
 boot=direct
 network=off
+system=off
 for option in "$@"; do
     case "$option" in
         --verbose) quiet='' ;;
         --ram) mode=ram ;;
         --iso) boot=iso ;;
         --net) network=on ;;
-        *) die 'Usage: bash os run [--ram] [--iso] [--net] [--verbose]' ;;
+        --system) system=on ;;
+        *) die 'Usage: bash os run [--ram] [--iso] [--system] [--net] [--verbose]' ;;
     esac
 done
 [[ "$boot" != iso || "$mode" != ram ]] || die 'ISO boot currently requires the persistent virtual disk.'
+[[ "$system" != on || ( "$mode" == disk && "$boot" == direct ) ]] || die '--system requires a disk and direct kernel boot.'
 mkdir -p "$root/build/logs"
 echo 'Сборка NekoOS; подробный вывод: build/logs/build.log'
 if ! bash "$root/scripts/build.sh" > "$root/build/logs/run-build.log" 2>&1; then
@@ -38,6 +41,14 @@ if [[ "$mode" == disk ]]; then
     echo 'Запускаю NekoOS с сохранением файлов в /root и /home.'
 else
     echo 'Запускаю временную NekoOS: изменения исчезнут после выключения.'
+fi
+if [[ "$system" == on ]]; then
+    bash "$root/scripts/create-system-disk.sh"
+    drive_args=(-drive "file=$root/out/disks/system.img,format=raw,if=virtio"
+                -drive "file=$root/out/disks/state.img,format=raw,if=virtio")
+    boot_args=(-kernel "$root/out/images/bzImage" -initrd "$root/out/images/bootstrap.cpio.gz")
+    append="$append neko.system=required"
+    echo 'Системный раздел на отдельном виртуальном диске; /etc и /usr сохраняются.'
 fi
 if [[ "$boot" == iso ]]; then
     bash "$root/scripts/create-iso.sh" > "$root/build/logs/iso.log" 2>&1 || {
