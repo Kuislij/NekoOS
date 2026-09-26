@@ -52,7 +52,8 @@
 `system.img`; `/etc` и основная часть `/usr` сохраняются. Диск данных
 `state.img` подключается вторым и по-прежнему содержит пользовательские пути.
 Подробности: [ADR-004](adr/0004-persistent-state.md) и
-[ADR-006](adr/0006-boot-services.md), [ADR-010](adr/0010-system-disk.md).
+[ADR-006](adr/0006-boot-services.md), [ADR-010](adr/0010-system-disk.md) и
+[ADR-011](adr/0011-system-update.md).
 
 ## Контроль образа
 

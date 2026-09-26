@@ -102,11 +102,11 @@ def validate(entries):
     for path in ('usr/bin/busybox', 'usr/bin/neko-help', 'usr/bin/neko-shell',
                  'usr/bin/neko-pkg',
                  'usr/bin/neko-service', 'etc/neko/services/network',
-                 'usr/bin/tcc', 'usr/lib/libc.so', 'init'):
+                 'usr/bin/tcc', 'usr/lib/libc.so', 'init', 'neko-update'):
         mode = entry(path, stat.S_ISREG, 'regular file')[0]
         require(mode & 0o111, f'{path} is not executable')
     for path in ('etc/inittab', 'etc/os-release', 'etc/passwd', 'etc/group',
-                 'etc/neko/boot-services'):
+                 'etc/neko/boot-services', 'usr/share/nekoos/etc-baseline.sha256'):
         entry(path, stat.S_ISREG, 'regular file')
     for path in ('usr/share/nekoos/examples/hello.c',
                  'usr/share/nekoos/packages/neko-greet-0.1.0.npkg',

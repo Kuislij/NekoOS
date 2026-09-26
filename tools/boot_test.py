@@ -24,6 +24,8 @@ def main():
     parser.add_argument('--package', action='store_true', help='install and remove a package on a disposable disk')
     parser.add_argument('--services', action='store_true', help='verify persistent service settings on a disposable disk')
     parser.add_argument('--system', action='store_true', help='boot a writable system root across two boots')
+    parser.add_argument('--system-update', action='store_true',
+                        help='verify update and rollback on disposable system and data disks')
     parser.add_argument('--timeout', type=int, default=90, help='boot deadline in seconds')
     args = parser.parse_args()
     if args.timeout < 1:
@@ -38,10 +40,15 @@ def main():
         parser.error('--services cannot be combined with other test modes')
     if args.system and (args.disk or args.net or args.package or args.services):
         parser.error('--system cannot be combined with other test modes')
+    if args.system_update and (args.system or args.disk or args.iso or args.net
+                               or args.package or args.services):
+        parser.error('--system-update cannot be combined with other test modes')
     if sys.platform != 'linux' or os.geteuid() == 0:
         parser.error('run as a regular Linux / WSL2 user')
     (ROOT / 'build').mkdir(exist_ok=True)
-    if args.system:
+    if args.system_update:
+        lock_name = '.system-update-test.lock'
+    elif args.system:
         lock_name = '.system-test.lock'
     elif args.services:
         lock_name = '.services-test.lock'
@@ -58,6 +65,8 @@ def main():
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             raise RuntimeError('Another boot test is already running') from None
+        if args.system_update:
+            return boot_system_update(args)
         if args.system:
             return boot_system(args)
         if args.services:
@@ -504,6 +513,62 @@ def boot_system(args):
                 raise RuntimeError('GRUB did not select the system disk entry')
     print(('ISO_SYSTEM_TEST_PASSED' if args.iso else 'SYSTEM_TEST_PASSED')
           + ': disk root and both filesystems survived poweroff')
+    return 0
+
+
+def boot_system_update(args):
+    from system_update import apply_update, rollback_update, verify_images
+
+    if not args.no_build:
+        subprocess.run(['bash', str(ROOT / 'scripts/build.sh')], check=True)
+    images = ROOT / 'out/images'
+    verify_images(images)
+    logs = ROOT / 'build/logs'
+    logs.mkdir(parents=True, exist_ok=True)
+    first = (
+        "printf '#!/bin/sh\\necho OLD_HELP\\n' > /usr/bin/neko-help && "
+        "chmod +x /usr/bin/neko-help && "
+        "printf local-setting > /etc/neko/notice && "
+        "printf '# local config\\n' >> /etc/profile && "
+        "printf user-data > /root/update-state-test && "
+        "sync && printf '\\n%s%s\\n' 'UPDATE_TEST_' 'PREPARED' && poweroff || poweroff\n"
+    ).encode('ascii')
+    second = (
+        "test \"$(cat /etc/neko/notice)\" = local-setting && "
+        "test \"$(cat /root/update-state-test)\" = user-data && "
+        "grep -Fq '# local config' /etc/profile && "
+        "test -f /etc/profile.neko-new && "
+        "neko-help | grep -Fq 'NekoOS 0.1' && "
+        "test -f /usr/share/nekoos/etc-baseline.sha256 && "
+        "printf '\\n%s%s\\n' 'UPDATE_TEST_' 'APPLIED' && poweroff || poweroff\n"
+    ).encode('ascii')
+    third = (
+        "test \"$(cat /etc/neko/notice)\" = local-setting && "
+        "test \"$(cat /root/update-state-test)\" = user-data && "
+        "neko-help | grep -Fqx OLD_HELP && "
+        "printf '\\n%s%s\\n' 'UPDATE_TEST_' 'ROLLED_BACK' && poweroff || poweroff\n"
+    ).encode('ascii')
+    with tempfile.TemporaryDirectory(prefix='system-update-test-', dir=ROOT / 'build') as directory:
+        system_disk = Path(directory) / 'system.img'
+        state_disk = Path(directory) / 'state.img'
+        subprocess.run(['cp', '--sparse=always', str(images / 'system-template.img'),
+                        str(system_disk)], check=True)
+        subprocess.run(['qemu-img', 'create', '-f', 'raw', str(state_disk), '128M'],
+                       check=True, stdout=subprocess.DEVNULL)
+        subprocess.run(['mkfs.ext4', '-F', '-q', str(state_disk)],
+                       check=True, stdout=subprocess.DEVNULL)
+        run_disk_guest(images, state_disk, first, 'UPDATE_TEST_PREPARED', 1,
+                       args.timeout, False, log_prefix='system-update',
+                       system_disk=system_disk)
+        backup = apply_update(images, system_disk, logs)
+        run_disk_guest(images, state_disk, second, 'UPDATE_TEST_APPLIED', 2,
+                       args.timeout, False, log_prefix='system-update',
+                       system_disk=system_disk)
+        rollback_update(system_disk, backup)
+        run_disk_guest(images, state_disk, third, 'UPDATE_TEST_ROLLED_BACK', 3,
+                       args.timeout, False, log_prefix='system-update',
+                       system_disk=system_disk)
+    print('SYSTEM_UPDATE_TEST_PASSED: update, settings, user data and rollback')
     return 0
 
 

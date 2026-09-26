@@ -64,9 +64,14 @@ for archive in "$root"/packages/local/*.npkg; do
     install -m 644 "$archive" "$stage/usr/share/nekoos/packages/$filename"
 done
 install -m 755 "$root/rootfs/init" "$stage/init"
+install -m 755 "$root/rootfs/neko-update-init" "$stage/neko-update"
 install -m 644 "$root/rootfs/etc/"{group,hosts,inittab,os-release,passwd,profile} "$stage/etc/"
 install -m 644 "$root/rootfs/etc/neko/boot-services" "$stage/etc/neko/boot-services"
 install -m 755 "$root/rootfs/etc/neko/services/network" "$stage/etc/neko/services/network"
+(
+    cd "$stage"
+    find etc -type f -print0 | sort -z | xargs -0 sha256sum
+) > "$stage/usr/share/nekoos/etc-baseline.sha256"
 chmod 1777 "$stage/tmp"
 chmod 1777 "$stage/var/tmp"
 chmod 700 "$stage/root"
@@ -80,6 +85,8 @@ find "$stage" -exec touch -h -d "@$SOURCE_DATE_EPOCH" {} +
 gzip -t "$root/out/images/initramfs.cpio.gz.new"
 mv "$root/out/images/initramfs.cpio.gz.new" "$root/out/images/initramfs.cpio.gz"
 python3 "$root/tools/validate_image.py" "$root/out/images/initramfs.cpio.gz"
+# The maintenance entry point is needed only in the RAM image.
+rm -- "$stage/neko-update"
 
 # A small first-stage image mounts the writable system disk and switch_roots.
 bootstrap="$root/build/bootstrap-rootfs"

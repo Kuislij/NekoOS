@@ -1,0 +1,79 @@
+#!/bin/sh
+# PID 1 in the full initramfs during an offline system-disk update.
+[ "$$" = 1 ] || exit 1
+export PATH=/usr/bin:/usr/sbin:/bin:/sbin HOME=/ TERM=vt100
+fail() {
+    echo "SYSTEM_UPDATE_FAILED: $*"
+    /bin/sync
+    /sbin/poweroff -f
+    exit 1
+}
+/bin/mount -t proc proc /proc || fail proc
+/bin/mount -t devtmpfs devtmpfs /dev || fail devtmpfs
+exec </dev/console >/dev/console 2>&1
+case " $(cat /proc/cmdline) " in
+    *' neko.update=required '*) ;;
+    *) fail 'update was not requested' ;;
+esac
+for attempt in 1 2 3 4 5 6 7 8 9 10; do
+    [ -b /dev/vda ] && break
+    /bin/sleep 1
+done
+[ -b /dev/vda ] || fail 'candidate disk not found'
+/bin/mkdir -p /sysroot || fail 'mount point'
+/bin/mount -t ext4 -o noatime /dev/vda /sysroot || fail 'candidate disk mount'
+[ -x /sysroot/usr/bin/busybox ] && [ -f /sysroot/etc/os-release ] &&
+    [ -f /sysroot/init ] || fail 'candidate is not a NekoOS system disk'
+
+# Existing settings win. Replace a setting only when its content still matches
+# the baseline stored by an earlier build. Unknown or locally changed settings
+# get a .neko-new companion, never an overwrite.
+while read -r new_hash path; do
+    case "$path" in etc/*) ;; *) fail 'invalid settings manifest' ;; esac
+    source_file="/$path"
+    target="/sysroot/$path"
+    [ -f "$source_file" ] || fail "missing source $path"
+    /bin/mkdir -p "${target%/*}" || fail "settings directory $path"
+    if [ ! -e "$target" ] && [ ! -L "$target" ]; then
+        /bin/cp -a "$source_file" "$target" || fail "new setting $path"
+        continue
+    fi
+    if [ -f "$target" ] && [ ! -L "$target" ] &&
+        /bin/cmp -s "$source_file" "$target"; then
+        continue
+    fi
+    old_hash=''
+    if [ -f /sysroot/usr/share/nekoos/etc-baseline.sha256 ]; then
+        while read -r baseline_hash baseline_path; do
+            if [ "$baseline_path" = "$path" ]; then
+                old_hash="$baseline_hash"
+                break
+            fi
+        done < /sysroot/usr/share/nekoos/etc-baseline.sha256
+    fi
+    if [ -n "$old_hash" ] && [ -f "$target" ] && [ ! -L "$target" ]; then
+        actual="$(/bin/sha256sum "$target")" || fail "hash $path"
+        if [ "${actual%% *}" = "$old_hash" ]; then
+            /bin/cp -a "$source_file" "$target" || fail "update setting $path"
+            continue
+        fi
+    fi
+    if [ ! -e "$target.neko-new" ] && [ ! -L "$target.neko-new" ]; then
+        /bin/cp -a "$source_file" "$target.neko-new" || fail "pending setting $path"
+    fi
+    echo "SYSTEM_UPDATE_CONFIG_PRESERVED: $path"
+done < /usr/share/nekoos/etc-baseline.sha256
+
+# Start from a copy of the old disk, retaining local additions and /var/tmp.
+# Replace the operating system files; /usr/local is separately mounted from
+# state.img on normal boots and is deliberately excluded here.
+for directory in bin sbin lib lib64 include share; do
+    /bin/mkdir -p "/sysroot/usr/$directory" || fail "directory $directory"
+    /bin/cp -af "/usr/$directory/." "/sysroot/usr/$directory/" ||
+        fail "system files $directory"
+done
+/bin/cp -a /init /sysroot/init || fail 'system init'
+/bin/sync || fail sync
+echo SYSTEM_UPDATE_APPLIED
+/sbin/poweroff -f
+exit 0
