@@ -22,6 +22,18 @@ cp -a "$toolchain/usr/lib/." "$stage/usr/lib/"
 cp -a "$toolchain/lib/ld-musl-x86_64.so.1" "$stage/usr/lib/ld-musl-x86_64.so.1"
 install -m 755 "$toolchain/usr/bin/tcc" "$stage/usr/bin/tcc"
 ln -s tcc "$stage/usr/bin/cc"
+python3 "$root/tools/system_package.py" install \
+    "$root/build/system-packages/pixman-0.46.4.nspkg" --root "$stage"
+"$root/scripts/host-musl-gcc.sh" "$root/tests/pixman_runtime.c" \
+    -I "$stage/usr/include/pixman-1" -L "$stage/usr/lib" -lpixman-1 \
+    -o "$stage/usr/bin/neko-pixman-check"
+readelf -l "$stage/usr/bin/neko-pixman-check" |
+    grep -Fq '/lib/ld-musl-x86_64.so.1' || die 'Pixman probe uses the wrong interpreter.'
+readelf -d "$stage/usr/bin/neko-pixman-check" |
+    grep -Fq 'libpixman-1.so.0' || die 'Pixman probe is not linked to the packaged library.'
+if readelf -d "$stage/usr/bin/neko-pixman-check" | grep -Eq 'RPATH|RUNPATH'; then
+    die 'Pixman probe must use the system library path.'
+fi
 bash "$root/scripts/build-neko-desktop.sh" "$root/build/neko-desktop"
 install -m 755 "$root/build/neko-desktop" "$stage/usr/bin/neko-desktop"
 "$1" --list > "$root/build/busybox-applets.txt"

@@ -78,6 +78,7 @@ make -C "$busybox" O="$bout" oldconfig < <(yes '')
 make -C "$busybox" O="$bout" CC="$root/scripts/host-musl-gcc.sh" -j"$jobs"
 printf '%s\n' "$compiler_id" > "$bout/.neko-compiler"
 if readelf -l "$bout/busybox" | grep -q INTERP; then die 'BusyBox must be statically linked.'; fi
+bash "$root/scripts/build-system-packages.sh"
 fakeroot bash "$root/scripts/image.sh" "$bout/busybox"
 install -m 644 "$kout/arch/x86/boot/bzImage" "$root/out/images/bzImage.new"
 mv "$root/out/images/bzImage.new" "$root/out/images/bzImage"

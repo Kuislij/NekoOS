@@ -81,10 +81,13 @@ def validate(entries):
         'home', 'media', 'mnt', 'opt', 'proc',
         'root', 'run', 'run/lock', 'state', 'sys', 'tmp', 'usr', 'usr/bin',
         'usr/include', 'usr/lib', 'usr/lib/tcc', 'usr/lib/tcc/include',
+        'usr/include/pixman-1', 'usr/lib/pkgconfig',
         'usr/lib64', 'usr/local', 'usr/local/bin', 'usr/local/etc',
         'usr/local/etc/neko', 'usr/local/etc/neko/services', 'usr/local/lib',
         'usr/local/sbin', 'usr/sbin', 'usr/share', 'usr/share/nekoos',
         'usr/share/nekoos/examples', 'usr/share/nekoos/packages', 'var', 'var/cache',
+        'usr/share/nekoos/system-packages', 'usr/share/licenses',
+        'usr/share/licenses/pixman',
         'var/lib', 'var/lib/neko-services', 'var/lib/neko-services/enabled',
         'var/lib/neko-services/disabled', 'var/log', 'var/tmp'
     ):
@@ -95,6 +98,7 @@ def validate(entries):
         'var/lock': b'../run/lock', 'usr/bin/sh': b'busybox',
         'usr/bin/cc': b'tcc',
         'usr/lib/ld-musl-x86_64.so.1': b'/usr/lib/libc.so',
+        'usr/lib/libpixman-1.so': b'libpixman-1.so.0',
         'usr/sbin/init': b'../bin/busybox'
     }.items():
         require(entry(path, stat.S_ISLNK, 'symlink')[1] == target,
@@ -103,6 +107,7 @@ def validate(entries):
                  'usr/bin/neko-session', 'usr/bin/neko-desktop',
                  'usr/bin/neko-pkg',
                  'usr/bin/neko-service', 'etc/neko/services/network',
+                 'usr/bin/neko-pixman-check',
                  'etc/neko/services/desktop',
                  'usr/bin/tcc', 'usr/lib/libc.so', 'init', 'neko-update'):
         mode = entry(path, stat.S_ISREG, 'regular file')[0]
@@ -118,6 +123,11 @@ def validate(entries):
                  'usr/share/nekoos/packages/neko-theme-1.0.0.npkg',
                  'usr/share/nekoos/packages/neko-theme-1.1.0.npkg',
                  'usr/include/stdio.h',
+                 'usr/include/pixman-1/pixman.h',
+                 'usr/lib/pkgconfig/pixman-1.pc',
+                 'usr/share/licenses/pixman/COPYING',
+                 'usr/share/nekoos/system-packages/pixman.manifest',
+                 'usr/lib/libpixman-1.so.0.46.4',
                  'usr/include/linux/version.h',
                  'usr/lib/libc.a', 'usr/lib/crt1.o', 'usr/lib/tcc/libtcc1.a'):
         entry(path, stat.S_ISREG, 'regular file')
