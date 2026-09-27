@@ -82,7 +82,8 @@ def validate(entries):
         'root', 'run', 'run/lock', 'state', 'sys', 'tmp', 'usr', 'usr/bin',
         'usr/include', 'usr/lib', 'usr/lib/tcc', 'usr/lib/tcc/include',
         'usr/include/pixman-1', 'usr/lib/pkgconfig',
-        'usr/include/X11', 'usr/include/X11/extensions', 'usr/include/GL',
+        'usr/include/X11', 'usr/include/X11/extensions',
+        'usr/include/X11/Xtrans', 'usr/include/GL',
         'usr/include/xcb',
         'usr/lib64', 'usr/local', 'usr/local/bin', 'usr/local/etc',
         'usr/local/etc/neko', 'usr/local/etc/neko/services', 'usr/local/lib',
@@ -92,7 +93,9 @@ def validate(entries):
         'usr/share/licenses/pixman',
         'usr/share/licenses/xorgproto', 'usr/share/licenses/libxau',
         'usr/share/licenses/libxdmcp', 'usr/share/pkgconfig',
-        'usr/share/licenses/libxcb',
+        'usr/share/licenses/libxcb', 'usr/share/licenses/xtrans',
+        'usr/share/licenses/libx11', 'usr/share/licenses/libxext',
+        'usr/share/X11', 'usr/share/X11/locale', 'usr/share/aclocal',
         'var/lib', 'var/lib/neko-services', 'var/lib/neko-services/enabled',
         'var/lib/neko-services/disabled', 'var/log', 'var/tmp'
     ):
@@ -107,6 +110,9 @@ def validate(entries):
         'usr/lib/libXau.so.6': b'libXau.so.6.0.0',
         'usr/lib/libXdmcp.so.6': b'libXdmcp.so.6.0.0',
         'usr/lib/libxcb.so.1': b'libxcb.so.1.1.0',
+        'usr/lib/libX11.so.6': b'libX11.so.6.4.0',
+        'usr/lib/libX11-xcb.so.1': b'libX11-xcb.so.1.0.0',
+        'usr/lib/libXext.so.6': b'libXext.so.6.4.0',
         'usr/sbin/init': b'../bin/busybox'
     }.items():
         require(entry(path, stat.S_ISLNK, 'symlink')[1] == target,
@@ -118,6 +124,7 @@ def validate(entries):
                  'usr/bin/neko-pixman-check',
                  'usr/bin/neko-x11-base-check',
                  'usr/bin/neko-xcb-check',
+                 'usr/bin/neko-xlib-check', 'usr/bin/neko-xext-check',
                  'etc/neko/services/desktop',
                  'usr/bin/tcc', 'usr/lib/libc.so', 'init', 'neko-update'):
         mode = entry(path, stat.S_ISREG, 'regular file')[0]
@@ -152,6 +159,18 @@ def validate(entries):
                  'usr/lib/libxcb.so.1.1.0',
                  'usr/share/licenses/libxcb/COPYING',
                  'usr/share/nekoos/system-packages/libxcb.manifest',
+                 'usr/include/X11/Xtrans/Xtrans.h',
+                 'usr/share/pkgconfig/xtrans.pc',
+                 'usr/share/licenses/xtrans/COPYING',
+                 'usr/share/nekoos/system-packages/xtrans.manifest',
+                 'usr/include/X11/Xlib.h', 'usr/lib/pkgconfig/x11.pc',
+                 'usr/lib/libX11.so.6.4.0', 'usr/lib/libX11-xcb.so.1.0.0',
+                 'usr/share/licenses/libx11/COPYING',
+                 'usr/share/nekoos/system-packages/libx11.manifest',
+                 'usr/include/X11/extensions/Xext.h',
+                 'usr/lib/pkgconfig/xext.pc', 'usr/lib/libXext.so.6.4.0',
+                 'usr/share/licenses/libxext/COPYING',
+                 'usr/share/nekoos/system-packages/libxext.manifest',
                  'usr/include/linux/version.h',
                  'usr/lib/libc.a', 'usr/lib/crt1.o', 'usr/lib/tcc/libtcc1.a'):
         entry(path, stat.S_ISREG, 'regular file')

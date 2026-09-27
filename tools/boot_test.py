@@ -436,6 +436,8 @@ def boot(args):
                         b"neko-pixman-check && "
                         b"neko-x11-base-check && "
                         b"neko-xcb-check && "
+                        b"neko-xlib-check && "
+                        b"neko-xext-check && "
                         b"uname -r && cat /etc/os-release && neko-help && "
                         b"neko-boot-status && "
                         b"printf '\\n%s%s\\n' 'SHELL_' 'READY' && poweroff || poweroff\n"
@@ -451,6 +453,8 @@ def boot(args):
                             and 'PIXMAN_RUNTIME_READY' in lines
                             and 'X11_BASE_RUNTIME_READY' in lines
                             and 'XCB_RUNTIME_READY' in lines
+                            and 'XLIB_RUNTIME_READY' in lines
+                            and 'XEXT_RUNTIME_READY' in lines
                             and 'Hello from NekoOS' in lines
                             and any('Power down' in line for line in lines)):
                         print(f'BOOT_TEST_PASSED: init, shell, filesystems, poweroff. Log: {log}')
@@ -796,6 +800,8 @@ def boot_system_update(args):
         "neko-pixman-check | grep -Fqx PIXMAN_RUNTIME_READY && "
         "neko-x11-base-check | grep -Fqx X11_BASE_RUNTIME_READY && "
         "neko-xcb-check | grep -Fqx XCB_RUNTIME_READY && "
+        "neko-xlib-check | grep -Fqx XLIB_RUNTIME_READY && "
+        "neko-xext-check | grep -Fqx XEXT_RUNTIME_READY && "
         "test -f /usr/share/nekoos/etc-baseline.sha256 && "
         "printf '\\n%s%s\\n' 'UPDATE_TEST_' 'APPLIED' && poweroff || poweroff\n"
     ).encode('ascii')

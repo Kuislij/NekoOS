@@ -8,9 +8,12 @@
 | TinyCC | 0.9.27 | `COPYING` и `RELICENSING` в upstream tarball; LGPL-2.1 с частично перелицензированным кодом |
 | Pixman | 0.46.4 | `COPYING` в upstream tarball и `/usr/share/licenses/pixman/COPYING` в образе; MIT |
 | xorgproto | 2025.1 | `COPYING-*` в upstream tarball и `/usr/share/licenses/xorgproto/` в образе; набор уведомлений для протоколов и GL |
+| xtrans | 1.6.0 | `COPYING` в upstream tarball и `/usr/share/licenses/xtrans/COPYING` в образе; несколько разрешительных уведомлений, метаданные пакета `NOASSERTION` |
 | libXau | 1.0.12 | `COPYING` в upstream tarball и `/usr/share/licenses/libxau/COPYING` в образе; MIT-open-group |
 | libXdmcp | 1.1.5 | `COPYING` в upstream tarball и `/usr/share/licenses/libxdmcp/COPYING` в образе; MIT-open-group |
 | libxcb | 1.17.0 | `COPYING` в upstream tarball и `/usr/share/licenses/libxcb/COPYING` в образе; разрешительная лицензия в стиле MIT |
+| libX11 | 1.8.13 | `COPYING` в upstream tarball и `/usr/share/licenses/libx11/COPYING` в образе; несколько разрешительных уведомлений, метаданные пакета `NOASSERTION` |
+| libXext | 1.3.7 | `COPYING` в upstream tarball и `/usr/share/licenses/libxext/COPYING` в образе; несколько разрешительных уведомлений, метаданные пакета `NOASSERTION` |
 | Meson (только на хосте) | 1.10.1 | `COPYING` в upstream tarball; Apache-2.0 |
 | xcb-proto (только на хосте) | 1.17.0 | `COPYING` в upstream tarball; разрешительная лицензия в стиле MIT |
 | pkgconf (только на хосте) | 2.5.1 | `COPYING` в upstream tarball; ISC |

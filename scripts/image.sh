@@ -56,7 +56,25 @@ grep -Fq 'libxcb.so.1' <<< "$xcb_dynamic" || die 'XCB probe lacks libxcb.'
 if grep -Eq 'RPATH|RUNPATH' <<< "$xcb_dynamic"; then
     die 'XCB probe must use the system library path.'
 fi
-for probe in neko-x11-base-check neko-xcb-check; do
+"$root/scripts/host-musl-gcc.sh" "$root/tests/xlib_runtime.c" \
+    -I "$stage/usr/include" -L "$stage/usr/lib" \
+    -Wl,-rpath-link,"$stage/usr/lib" -lX11 \
+    -o "$stage/usr/bin/neko-xlib-check"
+xlib_dynamic="$(readelf -d "$stage/usr/bin/neko-xlib-check")"
+grep -Fq 'libX11.so.6' <<< "$xlib_dynamic" || die 'Xlib probe lacks libX11.'
+if grep -Eq 'RPATH|RUNPATH' <<< "$xlib_dynamic"; then
+    die 'Xlib probe must use the system library path.'
+fi
+"$root/scripts/host-musl-gcc.sh" "$root/tests/xext_runtime.c" \
+    -I "$stage/usr/include" -L "$stage/usr/lib" \
+    -Wl,-rpath-link,"$stage/usr/lib" -lXext \
+    -o "$stage/usr/bin/neko-xext-check"
+xext_dynamic="$(readelf -d "$stage/usr/bin/neko-xext-check")"
+grep -Fq 'libXext.so.6' <<< "$xext_dynamic" || die 'Xext probe lacks libXext.'
+if grep -Eq 'RPATH|RUNPATH' <<< "$xext_dynamic"; then
+    die 'Xext probe must use the system library path.'
+fi
+for probe in neko-x11-base-check neko-xcb-check neko-xlib-check neko-xext-check; do
     readelf -l "$stage/usr/bin/$probe" |
         grep -Fq '/lib/ld-musl-x86_64.so.1' || die "$probe uses the wrong interpreter."
 done

@@ -7,11 +7,14 @@ source "$root/configs/system-packages.sh"
 
 bash "$root/recipes/pixman/build.sh"
 bash "$root/recipes/xorgproto/build.sh"
+bash "$root/recipes/xtrans/build.sh"
 bash "$root/recipes/libxau/build.sh"
 bash "$root/recipes/libxdmcp/build.sh"
 bash "$root/recipes/xcb-proto/build.sh"
 bash "$root/recipes/pkgconf/build.sh"
 bash "$root/recipes/libxcb/build.sh"
+bash "$root/recipes/libx11/build.sh"
+bash "$root/recipes/libxext/build.sh"
 for package in "${system_package_archives[@]}"; do
     python3 "$root/tools/system_package.py" verify \
         "$root/build/system-packages/$package"

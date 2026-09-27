@@ -119,6 +119,8 @@ def verify_guest_boot(images, candidate, timeout=120):
             b'neko-pixman-check >/dev/null && '
             b'neko-x11-base-check >/dev/null && '
             b'neko-xcb-check >/dev/null && '
+            b'neko-xlib-check >/dev/null && '
+            b'neko-xext-check >/dev/null && '
             b'test -f /etc/os-release && '
             b"printf '\\n%s%s\\n' 'SYSTEM_UPDATE_BOOT_' 'OK' && poweroff || poweroff\n",
             'SYSTEM_UPDATE_BOOT_OK', 1, timeout, False,

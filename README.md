@@ -13,9 +13,9 @@ BusyBox и TinyCC собраны с musl; программы, созданные
 запускается первая оконная оболочка: рабочий стол, панель, окна Files, System,
 About и Help. Это пока один графический процесс с прямым выводом в framebuffer;
 отдельные графические приложения ещё предстоит добавить. Для перехода к
-Xorg и Xfce уже собираются системные пакеты: Pixman, заголовки X.Org,
-libXau, libXdmcp и libxcb. Эти библиотеки пока не создают рабочий стол:
-X-сервер и сеанс Xfce ещё не установлены.
+Xorg и Xfce в образ уже входят Pixman, заголовки и транспорт X.Org,
+libXau, libXdmcp, libxcb, Xlib и libXext. Эти компоненты пока не создают
+рабочий стол: X-сервер, Xfce и Thunar ещё не установлены.
 
 ## Быстрый старт
 
@@ -241,18 +241,29 @@ neko-pkg remove neko-theme
 
 Сейчас образ включает [Pixman 0.46.4](recipes/pixman/README.md),
 [xorgproto 2025.1](recipes/xorgproto/README.md),
+[xtrans 1.6.0](recipes/xtrans/README.md),
 [libXau 1.0.12](recipes/libxau/README.md),
-[libXdmcp 1.1.5](recipes/libxdmcp/README.md) и
-[libxcb 1.17.0](recipes/libxcb/README.md), собранные для musl NekoOS.
+[libXdmcp 1.1.5](recipes/libxdmcp/README.md),
+[libxcb 1.17.0](recipes/libxcb/README.md),
+[libX11 1.8.13](recipes/libx11/README.md) и
+[libXext 1.3.7](recipes/libxext/README.md), собранные для musl NekoOS.
+xtrans содержит исходные фрагменты транспорта для других компонентов и не
+является отдельной разделяемой библиотекой в госте. Xlib и libXext дают
+клиентским программам интерфейсы X11, но им нужен запущенный X-сервер.
 Зависимости и их минимальные версии проверяются до изменения дерева образа.
 На сборочной машине используются закреплённые
 [xcb-proto](recipes/xcb-proto/README.md) и [pkgconf](recipes/pkgconf/README.md);
 в гостевую систему они не попадают. Проверки в QEMU запускают программы,
-связанные с Pixman, libXau/libXdmcp и libxcb. **X-сервер, Xfce и Thunar пока
-не установлены**: текущий экран с окнами Files/System остаётся
-однопроцессным прототипом. Последовательность перехода описана в
+связанные с Pixman, libXau/libXdmcp, libxcb, Xlib и libXext. Полная сборка
+прошла проверку initramfs из 4532 записей; прошли базовая, системная,
+графическая проверки (включая системный диск) и проверка обновления
+системного диска в QEMU.
+**X-сервер, Xfce и Thunar пока не установлены**: текущий экран с окнами
+Files/System остаётся однопроцессным прототипом. Последовательность перехода
+описана в
 [ADR-017](docs/adr/0017-system-packages-and-pixman.md) и
-[ADR-018](docs/adr/0018-x11-client-foundation.md).
+[ADR-018](docs/adr/0018-x11-client-foundation.md); новый слой Xlib и
+ближайшая проверка Xorg — в [ADR-019](docs/adr/0019-xlib-xext-and-xorg-milestone.md).
 
 ### Сеть
 
@@ -354,7 +365,8 @@ bash os run --graphics
 программой. Это [зафиксировано в ADR-016](docs/adr/0016-real-desktop-distribution-strategy.md);
 основа системных пакетов описана в
 [ADR-017](docs/adr/0017-system-packages-and-pixman.md), а собранные
-библиотеки X11 — в [ADR-018](docs/adr/0018-x11-client-foundation.md).
+библиотеки X11 — в [ADR-018](docs/adr/0018-x11-client-foundation.md) и
+[ADR-019](docs/adr/0019-xlib-xext-and-xorg-milestone.md).
 QEMU уже способен показать такой экран; нынешний упрощённый вид создаёт
 сам `neko-desktop`.
 
@@ -446,6 +458,7 @@ musl. Файлы `hello.c` и `hello` останутся в `/root` после `
 [Курс на настоящий рабочий стол из готовых компонентов](docs/adr/0016-real-desktop-distribution-strategy.md).
 [Системные пакеты и первая графическая библиотека](docs/adr/0017-system-packages-and-pixman.md).
 [Клиентские библиотеки X11 для будущего рабочего стола](docs/adr/0018-x11-client-foundation.md).
+[Xlib, libXext и ближайший рубеж Xorg](docs/adr/0019-xlib-xext-and-xorg-milestone.md).
 
 [Результаты проверок этапов 1–2](docs/validation-2026-09-23.md).
 [Результаты проверки этапа 3](docs/validation-2026-09-25.md).
@@ -465,3 +478,4 @@ musl. Файлы `hello.c` и `hello` останутся в `/root` после `
 [Проверка оконного рабочего стола и файлового действия](docs/validation-windowed-desktop-2026-09-27.md).
 [Проверка системного пакета Pixman и обновления образа](docs/validation-system-packages-2026-09-27.md).
 [Проверка основы X11 и системного обновления](docs/validation-x11-foundation-2026-09-27.md).
+[Проверка Xlib, libXext и системного образа](docs/validation-xlib-foundation-2026-09-27.md).
