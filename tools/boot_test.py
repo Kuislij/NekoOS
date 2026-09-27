@@ -6,6 +6,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import os
 from pathlib import Path
 import secrets
+import socket
 import subprocess
 import sys
 import tempfile
@@ -27,7 +28,7 @@ def main():
     parser.add_argument('--system-update', action='store_true',
                         help='verify update and rollback on disposable system and data disks')
     parser.add_argument('--graphics', action='store_true',
-                        help='verify the desktop and user session without opening a window')
+                        help='verify desktop windows and file creation through keyboard input')
     parser.add_argument('--timeout', type=int, default=90, help='boot deadline in seconds')
     args = parser.parse_args()
     if args.timeout < 1:
@@ -100,10 +101,12 @@ def boot_graphics(args):
         return boot_graphics_system(args, images)
     log = ROOT / 'build/logs/graphics-test.log'
     log.parent.mkdir(parents=True, exist_ok=True)
+    monitor_path = graphics_monitor_path()
     command = [
         'qemu-system-x86_64', '-machine', 'q35', '-accel', 'tcg',
         '-cpu', 'qemu64', '-m', '512M', '-smp', '2', '-nodefaults',
-        '-display', 'none', '-monitor', 'none', '-serial', 'stdio',
+        '-display', 'none', '-monitor', graphics_monitor_option(monitor_path),
+        '-serial', 'stdio',
         '-nic', 'none', '-no-reboot',
         '-device', 'virtio-vga', '-device', 'virtio-keyboard-pci',
         '-device', 'virtio-mouse-pci',
@@ -117,11 +120,22 @@ def boot_graphics(args):
         try:
             deadline = time.monotonic() + args.timeout
             sent = False
+            probe_sent = False
+            input_sent = False
             while time.monotonic() < deadline:
                 content = log.read_text(errors='replace')
                 lines = content.replace('\r', '').splitlines()
-                if ('SYSTEM_READY' in lines and 'built-in shell (ash)' in content
-                        and not sent):
+                if 'DESKTOP_INPUT_FAILED' in lines:
+                    raise RuntimeError(f'Desktop input did not become ready; see {log}')
+                ready = 'SYSTEM_READY' in lines and 'built-in shell (ash)' in content
+                if ready and not probe_sent:
+                    process.stdin.write(graphics_ready_command())
+                    process.stdin.flush()
+                    probe_sent = True
+                if probe_sent and not input_sent and 'DESKTOP_INPUT_READY' in lines:
+                    graphics_key_input(monitor_path, deadline)
+                    input_sent = True
+                if ready and input_sent and not sent:
                     process.stdin.write(
                         graphics_guest_command()
                     )
@@ -132,7 +146,7 @@ def boot_graphics(args):
                     lines = log.read_text(errors='replace').replace('\r', '').splitlines()
                     if (code == 0 and sent and graphics_markers_present(lines)
                             and any('Power down' in line for line in lines)):
-                        print(f'GRAPHICS_TEST_PASSED: desktop, user session and devices. Log: {log}')
+                        print(f'GRAPHICS_TEST_PASSED: desktop, file creation and devices. Log: {log}')
                         return 0
                     raise RuntimeError(f'Graphics boot failed; see {log}')
                 if 'Kernel panic' in content or 'BOOT_FAILED:' in content:
@@ -148,6 +162,80 @@ def boot_graphics(args):
                     process.kill()
                     process.wait()
             process.stdin.close()
+            monitor_path.unlink(missing_ok=True)
+
+
+def graphics_monitor_path():
+    return Path(tempfile.gettempdir()) / (
+        f'neko-hmp-{os.getpid()}-{secrets.token_hex(4)}.sock'
+    )
+
+
+def graphics_monitor_option(path):
+    return f'unix:{path},server=on,wait=off'
+
+
+def hmp_response(connection, deadline):
+    response = bytearray()
+    while not response.endswith(b'(qemu) '):
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise RuntimeError('QEMU monitor timed out')
+        connection.settimeout(min(2.0, remaining))
+        try:
+            chunk = connection.recv(4096)
+        except socket.timeout as error:
+            raise RuntimeError('QEMU monitor did not answer') from error
+        if not chunk:
+            raise RuntimeError('QEMU monitor closed unexpectedly')
+        response.extend(chunk)
+        if len(response) > 65536:
+            raise RuntimeError('QEMU monitor response is too large')
+    result = bytes(response)
+    if b'Error:' in result or b'unknown command' in result:
+        raise RuntimeError(f'QEMU monitor rejected command: {result!r}')
+    return result
+
+
+def graphics_key_input(monitor_path, deadline):
+    """Drive the actual virtio keyboard after the framebuffer desktop starts."""
+    connection = None
+    while time.monotonic() < deadline:
+        connection = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        try:
+            connection.settimeout(min(2.0, deadline - time.monotonic()))
+            connection.connect(str(monitor_path))
+            break
+        except (FileNotFoundError, ConnectionRefusedError):
+            connection.close()
+            connection = None
+            time.sleep(0.05)
+        except OSError:
+            connection.close()
+            raise
+    if connection is None:
+        raise RuntimeError('QEMU monitor did not become available')
+    with connection:
+        hmp_response(connection, deadline)
+        # F opens Files; N opens its new-file prompt. Use the visible UI to
+        # create a name that the serial shell can subsequently verify.
+        for key in ('f', 'n', 't', 'e', 's', 't', 'dot', 't', 'x', 't', 'ret'):
+            connection.sendall(f'sendkey {key}\n'.encode('ascii'))
+            hmp_response(connection, deadline)
+            time.sleep(0.20 if key in ('f', 'n') else 0.10)
+
+
+def graphics_ready_command():
+    # Managed service output is redirected to this log, not to the serial shell.
+    return (
+        b"i=0; until grep -Fq 'NEKO_DESKTOP_INPUT_READY' "
+        b"/run/neko/services/desktop.log 2>/dev/null; do i=$((i + 1)); "
+        b'[ "$i" -lt 10 ] || break; sleep 1; done; '
+        b"grep -Fq 'NEKO_DESKTOP_INPUT_READY' "
+        b"/run/neko/services/desktop.log 2>/dev/null && "
+        b"printf '\\n%s%s\\n' 'DESKTOP_INPUT_' 'READY' || "
+        b"printf '\\n%s%s\\n' 'DESKTOP_INPUT_' 'FAILED'\n"
+    )
 
 
 def graphics_guest_command():
@@ -155,6 +243,10 @@ def graphics_guest_command():
         b'test -c /dev/dri/card0 && '
         b'test -c /dev/fb0 && '
         b'ls /dev/input/event* >/dev/null && '
+        b'(i=0; until test -f /home/neko/test.txt; do '
+        b'i=$((i + 1)); [ "$i" -lt 6 ] || exit 1; sleep 1; done) && '
+        b'test -f /home/neko/test.txt && '
+        b"printf '\\n%s%s\\n' 'GUI_FILE_' 'CREATED' && "
         b"neko-service status desktop | grep -Fq 'desktop: running (pid ' && "
         b'neko-session --check && '
         b'neko-service stop desktop && '
@@ -166,7 +258,9 @@ def graphics_guest_command():
 
 
 def graphics_markers_present(lines):
-    return ('GRAPHICS_READY' in lines and 'NEKO_SESSION_READY' in lines
+    return ('GRAPHICS_READY' in lines and 'DESKTOP_INPUT_READY' in lines
+            and 'GUI_FILE_CREATED' in lines
+            and 'NEKO_SESSION_READY' in lines
             and any(line.startswith('NEKO_DESKTOP_FRAME_READY width=')
                     for line in lines))
 
@@ -189,7 +283,7 @@ def boot_graphics_system(args, images):
         lines = log.read_text(errors='replace').replace('\r', '').splitlines()
         if not graphics_markers_present(lines):
             raise RuntimeError(f'System disk desktop or session check failed; see {log}')
-    print(f'GRAPHICS_SYSTEM_TEST_PASSED: desktop on writable system disk. Log: {log}')
+    print(f'GRAPHICS_SYSTEM_TEST_PASSED: desktop file creation on writable system disk. Log: {log}')
     return 0
 
 
@@ -731,10 +825,13 @@ def run_disk_guest(images, disk, guest_command, marker, pass_number, timeout, is
     prefix = log_prefix or ('iso' if iso else 'disk')
     log = ROOT / 'build/logs' / f'{prefix}-test-{pass_number}.log'
     log.parent.mkdir(parents=True, exist_ok=True)
+    monitor_path = graphics_monitor_path() if graphics else None
     command = [
         'qemu-system-x86_64', '-machine', 'q35', '-accel', 'tcg',
         '-cpu', 'qemu64', '-m', ('512M' if graphics else '256M'), '-smp', '2', '-nodefaults',
-        '-display', 'none', '-monitor', 'none', '-serial', 'stdio',
+        '-display', 'none', '-monitor',
+        graphics_monitor_option(monitor_path) if graphics else 'none',
+        '-serial', 'stdio',
         '-nic', ('user,model=virtio-net-pci,ipv6=off' if network else 'none'),
         '-no-reboot',
     ]
@@ -764,11 +861,24 @@ def run_disk_guest(images, disk, guest_command, marker, pass_number, timeout, is
         try:
             deadline = time.monotonic() + timeout
             sent = False
+            probe_sent = False
+            input_sent = not graphics
             while time.monotonic() < deadline:
                 content = log.read_text(errors='replace')
                 lines = content.replace('\r', '').splitlines()
-                if ('PERSISTENCE_READY' in lines and 'SYSTEM_READY' in lines
-                        and 'built-in shell (ash)' in content and not sent):
+                if graphics and 'DESKTOP_INPUT_FAILED' in lines:
+                    raise RuntimeError(f'Desktop input did not become ready; see {log}')
+                ready = ('PERSISTENCE_READY' in lines and 'SYSTEM_READY' in lines
+                         and 'built-in shell (ash)' in content)
+                if graphics and ready and not probe_sent:
+                    process.stdin.write(graphics_ready_command())
+                    process.stdin.flush()
+                    probe_sent = True
+                if graphics and probe_sent and not input_sent and \
+                        'DESKTOP_INPUT_READY' in lines:
+                    graphics_key_input(monitor_path, deadline)
+                    input_sent = True
+                if ready and input_sent and not sent:
                     process.stdin.write(guest_command)
                     process.stdin.flush()
                     sent = True
@@ -795,6 +905,8 @@ def run_disk_guest(images, disk, guest_command, marker, pass_number, timeout, is
                     process.kill()
                     process.wait()
             process.stdin.close()
+            if monitor_path is not None:
+                monitor_path.unlink(missing_ok=True)
 
 
 if __name__ == '__main__':
