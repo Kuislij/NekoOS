@@ -189,6 +189,11 @@ boot_one() {
         echo "SERVICE_SKIPPED:$1 (missing or invalid)"
         return
     fi
+    if grep -qx '# neko-service: requires-fbdev' "$service" &&
+       [ ! -c /dev/fb0 ]; then
+        echo "Skipping service without display: $1"
+        return
+    fi
     if ! is_enabled "$1"; then
         echo "Skipping disabled service: $1"
         return

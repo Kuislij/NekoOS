@@ -1,0 +1,7 @@
+#!/bin/sh
+# neko-service: foreground
+# neko-service: requires-fbdev
+case "${1:-}" in
+    run) exec /usr/bin/neko-session ;;
+    *) exit 2 ;;
+esac

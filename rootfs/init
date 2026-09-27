@@ -43,6 +43,22 @@ case " $(cat /proc/cmdline) " in
         echo 'Temporary session: files disappear after poweroff.'
         ;;
 esac
+if [ -L /home/neko ]; then
+    echo 'SESSION_DISABLED: /home/neko is a symlink'
+elif mkdir -p /home/neko && chown 1000:1000 /home/neko && chmod 700 /home/neko; then
+    :
+else
+    echo 'SESSION_DISABLED: could not prepare /home/neko'
+fi
+if [ -c /dev/fb0 ]; then
+    chown 0:1000 /dev/fb0 && chmod 660 /dev/fb0 ||
+        echo 'SESSION_DISABLED: could not grant display access'
+fi
+for event in /dev/input/event*; do
+    [ -c "$event" ] || continue
+    chown 0:1000 "$event" && chmod 660 "$event" ||
+        echo "SESSION_DISABLED: could not grant input access to $event"
+done
 ifconfig lo 127.0.0.1 up || fail loopback
 echo 'Booting NekoOS - development console'
 echo 'Type neko-help for example commands.'

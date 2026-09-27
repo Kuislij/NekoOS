@@ -1,0 +1,58 @@
+#!/bin/sh
+# Launch the trusted desktop with the fixed, unprivileged guest identity.
+set -eu
+
+usage() {
+    echo 'Usage: neko-session [--check|--self-test]' >&2
+    exit 2
+}
+
+[ "$#" -le 1 ] || usage
+case "${1:-}" in
+    ''|--check|--self-test) ;;
+    *) usage ;;
+esac
+
+if [ "$(id -u)" != 0 ]; then
+    echo 'neko-session: start it from the root console or a root service' >&2
+    exit 1
+fi
+if [ ! -x /usr/bin/setuidgid ] || [ ! -x /usr/bin/neko-desktop ]; then
+    echo 'neko-session: desktop or privilege-drop helper is missing' >&2
+    exit 1
+fi
+if [ ! -d /home/neko ] || [ -L /home/neko ]; then
+    echo 'neko-session: /home/neko is missing or unsafe' >&2
+    exit 1
+fi
+
+# Avoid passing a root console's search paths and shell startup variables on.
+unset CDPATH ENV BASH_ENV LD_PRELOAD LD_LIBRARY_PATH LD_AUDIT
+export PATH=/usr/bin:/bin HOME=/home/neko USER=neko LOGNAME=neko SHELL=/bin/sh
+umask 077
+cd /home/neko
+
+case "${1:-}" in
+    --check)
+        # This check itself runs with UID/GID 1000, not as the caller.
+        exec /usr/bin/setuidgid neko /bin/sh -c '
+            [ "$(id -u)" = 1000 ] && [ "$(id -g)" = 1000 ] || exit 1
+            [ "$HOME" = /home/neko ] && [ -w "$HOME" ] || exit 1
+            [ -c /dev/fb0 ] && [ -r /dev/fb0 ] && [ -w /dev/fb0 ] || exit 1
+            input_ready=0
+            for event in /dev/input/event*; do
+                [ -c "$event" ] && [ -r "$event" ] || continue
+                input_ready=1
+                break
+            done
+            [ "$input_ready" = 1 ] || exit 1
+            echo NEKO_SESSION_READY
+        '
+        ;;
+    --self-test)
+        exec /usr/bin/setuidgid neko /usr/bin/neko-desktop --self-test
+        ;;
+    *)
+        exec /usr/bin/setuidgid neko /usr/bin/neko-desktop
+        ;;
+esac

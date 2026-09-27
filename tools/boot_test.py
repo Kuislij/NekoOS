@@ -27,7 +27,7 @@ def main():
     parser.add_argument('--system-update', action='store_true',
                         help='verify update and rollback on disposable system and data disks')
     parser.add_argument('--graphics', action='store_true',
-                        help='verify virtual GPU and input devices without opening a window')
+                        help='verify the desktop and user session without opening a window')
     parser.add_argument('--timeout', type=int, default=90, help='boot deadline in seconds')
     args = parser.parse_args()
     if args.timeout < 1:
@@ -45,7 +45,7 @@ def main():
     if args.system_update and (args.system or args.disk or args.iso or args.net
                                or args.package or args.services or args.graphics):
         parser.error('--system-update cannot be combined with other test modes')
-    if args.graphics and (args.system or args.disk or args.iso or args.net
+    if args.graphics and (args.disk or args.iso or args.net
                           or args.package or args.services):
         parser.error('--graphics cannot be combined with other test modes')
     if sys.platform != 'linux' or os.geteuid() == 0:
@@ -96,6 +96,8 @@ def boot_graphics(args):
     subprocess.run(['sha256sum', '-c', 'SHA256SUMS'], cwd=images, check=True)
     subprocess.run([sys.executable, str(ROOT / 'tools/validate_image.py'),
                     str(images / 'initramfs.cpio.gz')], check=True)
+    if args.system:
+        return boot_graphics_system(args, images)
     log = ROOT / 'build/logs/graphics-test.log'
     log.parent.mkdir(parents=True, exist_ok=True)
     command = [
@@ -121,18 +123,16 @@ def boot_graphics(args):
                 if ('SYSTEM_READY' in lines and 'built-in shell (ash)' in content
                         and not sent):
                     process.stdin.write(
-                        b'test -c /dev/dri/card0 && '
-                        b'ls /dev/input/event* >/dev/null && '
-                        b"printf '\\n%s%s\\n' 'GRAPHICS_' 'READY' && poweroff || poweroff\n"
+                        graphics_guest_command()
                     )
                     process.stdin.flush()
                     sent = True
                 code = process.poll()
                 if code is not None:
                     lines = log.read_text(errors='replace').replace('\r', '').splitlines()
-                    if (code == 0 and sent and 'GRAPHICS_READY' in lines
+                    if (code == 0 and sent and graphics_markers_present(lines)
                             and any('Power down' in line for line in lines)):
-                        print(f'GRAPHICS_TEST_PASSED: virtual GPU and input devices. Log: {log}')
+                        print(f'GRAPHICS_TEST_PASSED: desktop, user session and devices. Log: {log}')
                         return 0
                     raise RuntimeError(f'Graphics boot failed; see {log}')
                 if 'Kernel panic' in content or 'BOOT_FAILED:' in content:
@@ -148,6 +148,49 @@ def boot_graphics(args):
                     process.kill()
                     process.wait()
             process.stdin.close()
+
+
+def graphics_guest_command():
+    return (
+        b'test -c /dev/dri/card0 && '
+        b'test -c /dev/fb0 && '
+        b'ls /dev/input/event* >/dev/null && '
+        b"neko-service status desktop | grep -Fq 'desktop: running (pid ' && "
+        b'neko-session --check && '
+        b'neko-service stop desktop && '
+        b'neko-session --self-test && '
+        b'neko-service start desktop && '
+        b"neko-service status desktop | grep -Fq 'desktop: running (pid ' && "
+        b"printf '\\n%s%s\\n' 'GRAPHICS_' 'READY' && poweroff || poweroff\n"
+    )
+
+
+def graphics_markers_present(lines):
+    return ('GRAPHICS_READY' in lines and 'NEKO_SESSION_READY' in lines
+            and any(line.startswith('NEKO_DESKTOP_FRAME_READY width=')
+                    for line in lines))
+
+
+def boot_graphics_system(args, images):
+    with tempfile.TemporaryDirectory(prefix='graphics-system-test-',
+                                     dir=ROOT / 'build') as directory:
+        system_disk = Path(directory) / 'system.img'
+        state_disk = Path(directory) / 'state.img'
+        subprocess.run(['cp', '--sparse=always', str(images / 'system-template.img'),
+                        str(system_disk)], check=True)
+        subprocess.run(['qemu-img', 'create', '-f', 'raw', str(state_disk), '128M'],
+                       check=True)
+        subprocess.run(['mkfs.ext4', '-F', '-q', str(state_disk)], check=True)
+        run_disk_guest(images, state_disk, graphics_guest_command(),
+                       'GRAPHICS_READY', 1, args.timeout, False,
+                       log_prefix='graphics-system', system_disk=system_disk,
+                       graphics=True)
+        log = ROOT / 'build/logs/graphics-system-test-1.log'
+        lines = log.read_text(errors='replace').replace('\r', '').splitlines()
+        if not graphics_markers_present(lines):
+            raise RuntimeError(f'System disk desktop or session check failed; see {log}')
+    print(f'GRAPHICS_SYSTEM_TEST_PASSED: desktop on writable system disk. Log: {log}')
+    return 0
 
 
 def boot_network(args):
@@ -683,17 +726,21 @@ def boot_system_update(args):
 
 
 def run_disk_guest(images, disk, guest_command, marker, pass_number, timeout, iso,
-                   log_prefix=None, network=False, system_disk=None):
+                   log_prefix=None, network=False, system_disk=None,
+                   graphics=False):
     prefix = log_prefix or ('iso' if iso else 'disk')
     log = ROOT / 'build/logs' / f'{prefix}-test-{pass_number}.log'
     log.parent.mkdir(parents=True, exist_ok=True)
     command = [
         'qemu-system-x86_64', '-machine', 'q35', '-accel', 'tcg',
-        '-cpu', 'qemu64', '-m', '256M', '-smp', '2', '-nodefaults',
+        '-cpu', 'qemu64', '-m', ('512M' if graphics else '256M'), '-smp', '2', '-nodefaults',
         '-display', 'none', '-monitor', 'none', '-serial', 'stdio',
         '-nic', ('user,model=virtio-net-pci,ipv6=off' if network else 'none'),
         '-no-reboot',
     ]
+    if graphics:
+        command += ['-device', 'virtio-vga', '-device', 'virtio-keyboard-pci',
+                    '-device', 'virtio-mouse-pci']
     if system_disk is not None:
         command += ['-drive', f'file={system_disk},format=raw,if=virtio']
     command += ['-drive', f'file={disk},format=raw,if=virtio']

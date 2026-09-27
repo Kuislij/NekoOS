@@ -22,11 +22,13 @@ cp -a "$toolchain/usr/lib/." "$stage/usr/lib/"
 cp -a "$toolchain/lib/ld-musl-x86_64.so.1" "$stage/usr/lib/ld-musl-x86_64.so.1"
 install -m 755 "$toolchain/usr/bin/tcc" "$stage/usr/bin/tcc"
 ln -s tcc "$stage/usr/bin/cc"
+bash "$root/scripts/build-neko-desktop.sh" "$root/build/neko-desktop"
+install -m 755 "$root/build/neko-desktop" "$stage/usr/bin/neko-desktop"
 "$1" --list > "$root/build/busybox-applets.txt"
 while IFS= read -r applet; do
     [[ "$applet" == busybox ]] || ln -s busybox "$stage/usr/bin/$applet"
 done < "$root/build/busybox-applets.txt"
-for applet in sh mount mkdir sleep ifconfig route udhcpc ping wget tar sha256sum flock readlink; do
+for applet in sh mount mkdir sleep ifconfig route udhcpc ping wget tar sha256sum flock readlink chown setuidgid; do
     [[ -x "$stage/usr/bin/$applet" ]] || die "Missing required applet: $applet"
 done
 for applet in init halt poweroff reboot; do
@@ -34,6 +36,7 @@ for applet in init halt poweroff reboot; do
 done
 install -m 755 "$root/rootfs/usr/bin/neko-help" "$stage/usr/bin/neko-help"
 install -m 755 "$root/rootfs/usr/bin/neko-shell" "$stage/usr/bin/neko-shell"
+install -m 755 "$root/rootfs/usr/bin/neko-session" "$stage/usr/bin/neko-session"
 install -m 755 "$root/rootfs/usr/bin/neko-boot-status" "$stage/usr/bin/neko-boot-status"
 install -m 755 "$root/rootfs/usr/bin/neko-net-status" "$stage/usr/bin/neko-net-status"
 install -m 755 "$root/rootfs/usr/bin/neko-service" "$stage/usr/bin/neko-service"
@@ -76,6 +79,7 @@ install -m 755 "$root/rootfs/neko-update-init" "$stage/neko-update"
 install -m 644 "$root/rootfs/etc/"{group,hosts,inittab,os-release,passwd,profile} "$stage/etc/"
 install -m 644 "$root/rootfs/etc/neko/boot-services" "$stage/etc/neko/boot-services"
 install -m 755 "$root/rootfs/etc/neko/services/network" "$stage/etc/neko/services/network"
+install -m 755 "$root/rootfs/etc/neko/services/desktop" "$stage/etc/neko/services/desktop"
 (
     cd "$stage"
     find etc -type f -print0 | sort -z | xargs -0 sha256sum

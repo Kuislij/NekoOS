@@ -39,9 +39,8 @@ memory=256M
 if [[ "$graphics" == on ]]; then
     display_args=(-display gtk -device virtio-vga -device virtio-keyboard-pci -device virtio-mouse-pci)
     memory=512M
-    # Keep the serial device last: /dev/console and the shell stay on ttyS0.
-    append="console=tty0 $append"
-    echo 'Открываю графическое окно QEMU. Текстовая консоль остаётся в этом терминале.'
+    # Kernel messages stay on serial instead of drawing over the desktop.
+    echo 'Открываю графический экран NekoOS в QEMU. Текстовая консоль остаётся в этом терминале.'
 fi
 if [[ "$mode" == disk ]]; then
     bash "$root/scripts/create-disk.sh"
