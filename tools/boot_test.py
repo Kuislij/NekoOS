@@ -434,6 +434,8 @@ def boot(args):
                         b"cc /usr/share/nekoos/examples/hello.c -o /tmp/example && "
                         b"/tmp/example && "
                         b"neko-pixman-check && "
+                        b"neko-x11-base-check && "
+                        b"neko-xcb-check && "
                         b"uname -r && cat /etc/os-release && neko-help && "
                         b"neko-boot-status && "
                         b"printf '\\n%s%s\\n' 'SHELL_' 'READY' && poweroff || poweroff\n"
@@ -447,6 +449,8 @@ def boot(args):
                     if (code == 0 and sent and 'SHELL_READY' in lines
                             and 'C_READY' in lines and 'HARDWARE_READY' in lines
                             and 'PIXMAN_RUNTIME_READY' in lines
+                            and 'X11_BASE_RUNTIME_READY' in lines
+                            and 'XCB_RUNTIME_READY' in lines
                             and 'Hello from NekoOS' in lines
                             and any('Power down' in line for line in lines)):
                         print(f'BOOT_TEST_PASSED: init, shell, filesystems, poweroff. Log: {log}')
@@ -790,6 +794,8 @@ def boot_system_update(args):
         "neko-help | grep -Fq 'NekoOS 0.1' && "
         "test -r /usr/share/nekoos/system-packages/pixman.manifest && "
         "neko-pixman-check | grep -Fqx PIXMAN_RUNTIME_READY && "
+        "neko-x11-base-check | grep -Fqx X11_BASE_RUNTIME_READY && "
+        "neko-xcb-check | grep -Fqx XCB_RUNTIME_READY && "
         "test -f /usr/share/nekoos/etc-baseline.sha256 && "
         "printf '\\n%s%s\\n' 'UPDATE_TEST_' 'APPLIED' && poweroff || poweroff\n"
     ).encode('ascii')

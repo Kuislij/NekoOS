@@ -9,6 +9,7 @@ package scripts and never follows package or rootfs symlinks while writing.
 import argparse
 import hashlib
 import io
+from itertools import zip_longest
 import json
 import os
 from pathlib import Path
@@ -392,6 +393,109 @@ def _open_parent(root, path):
         raise
 
 
+def _installed_package(root, name):
+    """Read a recorded package without following rootfs or manifest symlinks."""
+    path = f'usr/share/nekoos/system-packages/{name}.manifest'
+    try:
+        parent_fd = _open_parent(root, path)
+    except FileNotFoundError:
+        return None
+    except OSError as error:
+        raise PackageError(f'cannot read installed package {name}: {error}') from error
+    try:
+        try:
+            flags = os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0) | getattr(os, 'O_NONBLOCK', 0)
+            fd = os.open(f'{name}.manifest', flags, dir_fd=parent_fd)
+        except FileNotFoundError:
+            return None
+        with os.fdopen(fd, 'rb') as record:
+            if not stat.S_ISREG(os.fstat(record.fileno()).st_mode):
+                raise PackageError(f'installed package record is not a regular file: {name}')
+            body = record.read(MAX_MANIFEST + 1)
+    except OSError as error:
+        raise PackageError(f'cannot read installed package {name}: {error}') from error
+    finally:
+        os.close(parent_fd)
+    if len(body) > MAX_MANIFEST:
+        raise PackageError(f'installed package record is too large: {name}')
+    try:
+        manifest = json.loads(body.decode('utf-8'), object_pairs_hook=_unique_json)
+    except (UnicodeError, json.JSONDecodeError) as error:
+        raise PackageError(f'invalid installed package record for {name}: {error}') from error
+    if _json_bytes(manifest) != body:
+        raise PackageError(f'installed package record is not canonical JSON: {name}')
+    _validate_manifest(manifest)
+    package = manifest['package']
+    if package['name'] != name:
+        raise PackageError(f'installed package record names another package: {name}')
+    return package
+
+
+def _numeric_version(version):
+    """Compare the dotted numeric release versions used by system recipes."""
+    if not re.fullmatch(r'[0-9]+(?:\.[0-9]+)*', version):
+        raise PackageError(f'unsupported dependency version for comparison: {version!r}')
+    return tuple(int(component) for component in version.split('.'))
+
+
+def _version_at_least(actual, minimum):
+    actual_parts = _numeric_version(actual)
+    minimum_parts = _numeric_version(minimum)
+    for current, required in zip_longest(actual_parts, minimum_parts, fillvalue=0):
+        if current != required:
+            return current > required
+    return True
+
+
+def _check_dependencies(root, packages):
+    """Resolve dependencies before any rootfs writes occur."""
+    if root.is_symlink() or not root.is_dir():
+        raise PackageError('rootfs target must be an existing real directory')
+    provided = {manifest['package']['name']: manifest['package']
+                for _, manifest in packages}
+    for package in provided.values():
+        if package['arch'] != 'x86_64':
+            raise PackageError(f"unsupported package architecture for {package['name']}: "
+                               f"{package['arch']}; expected x86_64")
+    installed = {}
+    graph = {}
+    for name, package in provided.items():
+        graph[name] = set()
+        for requirement in package['dependencies']:
+            match = DEPENDENCY.fullmatch(requirement)
+            dependency, minimum = match.groups()
+            provider = provided.get(dependency)
+            if provider is not None:
+                graph[name].add(dependency)
+            else:
+                if dependency not in installed:
+                    installed[dependency] = _installed_package(root, dependency)
+                provider = installed[dependency]
+            if provider is None:
+                raise PackageError(f'missing dependency for {name}: {requirement}')
+            if provider['arch'] != package['arch']:
+                raise PackageError(f'wrong architecture for dependency {dependency}: '
+                                   f"{provider['arch']}; expected {package['arch']}")
+            if minimum is not None and not _version_at_least(provider['version'], minimum):
+                raise PackageError(f'dependency {requirement} for {name} is too old: '
+                                   f"found {provider['version']}")
+    dependents = {name: set() for name in graph}
+    for name, dependencies in graph.items():
+        for dependency in dependencies:
+            dependents[dependency].add(name)
+    ready = sorted(name for name, dependencies in graph.items() if not dependencies)
+    processed = 0
+    while ready:
+        name = ready.pop()
+        processed += 1
+        for dependent in sorted(dependents[name]):
+            graph[dependent].remove(name)
+            if not graph[dependent]:
+                ready.append(dependent)
+    if processed != len(graph):
+        raise PackageError('cyclic package dependency')
+
+
 def install(archive_paths, rootfs):
     """Preflight and install one or more archives into an existing rootfs.
 
@@ -420,6 +524,7 @@ def install(archive_paths, rootfs):
             combined[path] = entry
         record_path = f'usr/share/nekoos/system-packages/{name}.manifest'
         provenance[record_path] = _json_bytes(manifest)
+    _check_dependencies(root, packages)
     for directory in ('usr/share', 'usr/share/nekoos',
                       'usr/share/nekoos/system-packages'):
         previous = combined.get(directory)

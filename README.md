@@ -13,8 +13,9 @@ BusyBox и TinyCC собраны с musl; программы, созданные
 запускается первая оконная оболочка: рабочий стол, панель, окна Files, System,
 About и Help. Это пока один графический процесс с прямым выводом в framebuffer;
 отдельные графические приложения ещё предстоит добавить. Для перехода к
-Xorg и Xfce начата сборка системных пакетов; первой графической зависимостью
-выбрана библиотека Pixman 0.46.4. Она сама не создаёт рабочий стол.
+Xorg и Xfce уже собираются системные пакеты: Pixman, заголовки X.Org,
+libXau, libXdmcp и libxcb. Эти библиотеки пока не создают рабочий стол:
+X-сервер и сеанс Xfce ещё не установлены.
 
 ## Быстрый старт
 
@@ -238,12 +239,20 @@ neko-pkg remove neko-theme
 пакеты гостевого `neko-pkg`: тот устанавливает пользовательские программы в
 сохраняемый `/usr/local` после загрузки.
 
-Первый рецепт, [Pixman 0.46.4](recipes/pixman/README.md), готовит
-разделяемую библиотеку, заголовки и `pkg-config`-файл против musl NekoOS.
-Pixman понадобится графическому стеку Xorg/Cairo, но **Xorg, Xfce и Thunar
-пока не установлены**. Текущий экран с окнами Files/System остаётся
+Сейчас образ включает [Pixman 0.46.4](recipes/pixman/README.md),
+[xorgproto 2025.1](recipes/xorgproto/README.md),
+[libXau 1.0.12](recipes/libxau/README.md),
+[libXdmcp 1.1.5](recipes/libxdmcp/README.md) и
+[libxcb 1.17.0](recipes/libxcb/README.md), собранные для musl NekoOS.
+Зависимости и их минимальные версии проверяются до изменения дерева образа.
+На сборочной машине используются закреплённые
+[xcb-proto](recipes/xcb-proto/README.md) и [pkgconf](recipes/pkgconf/README.md);
+в гостевую систему они не попадают. Проверки в QEMU запускают программы,
+связанные с Pixman, libXau/libXdmcp и libxcb. **X-сервер, Xfce и Thunar пока
+не установлены**: текущий экран с окнами Files/System остаётся
 однопроцессным прототипом. Последовательность перехода описана в
-[ADR-017](docs/adr/0017-system-packages-and-pixman.md).
+[ADR-017](docs/adr/0017-system-packages-and-pixman.md) и
+[ADR-018](docs/adr/0018-x11-client-foundation.md).
 
 ### Сеть
 
@@ -343,8 +352,9 @@ bash os run --graphics
 а не отдельным приложениям. Цель следующего крупного этапа — настоящий
 сеанс Xorg и Xfce с готовым файловым менеджером Thunar как отдельной
 программой. Это [зафиксировано в ADR-016](docs/adr/0016-real-desktop-distribution-strategy.md);
-первый шаг по сборке зависимостей — Pixman и формат системных пакетов из
-[ADR-017](docs/adr/0017-system-packages-and-pixman.md).
+основа системных пакетов описана в
+[ADR-017](docs/adr/0017-system-packages-and-pixman.md), а собранные
+библиотеки X11 — в [ADR-018](docs/adr/0018-x11-client-foundation.md).
 QEMU уже способен показать такой экран; нынешний упрощённый вид создаёт
 сам `neko-desktop`.
 
@@ -435,6 +445,7 @@ musl. Файлы `hello.c` и `hello` останутся в `/root` после `
 [Решение о развитии оконного рабочего стола](docs/adr/0015-windowed-desktop-path.md).
 [Курс на настоящий рабочий стол из готовых компонентов](docs/adr/0016-real-desktop-distribution-strategy.md).
 [Системные пакеты и первая графическая библиотека](docs/adr/0017-system-packages-and-pixman.md).
+[Клиентские библиотеки X11 для будущего рабочего стола](docs/adr/0018-x11-client-foundation.md).
 
 [Результаты проверок этапов 1–2](docs/validation-2026-09-23.md).
 [Результаты проверки этапа 3](docs/validation-2026-09-25.md).
@@ -453,3 +464,4 @@ musl. Файлы `hello.c` и `hello` останутся в `/root` после `
 [Проверка первого графического экрана и пользователя](docs/validation-desktop-2026-09-27.md).
 [Проверка оконного рабочего стола и файлового действия](docs/validation-windowed-desktop-2026-09-27.md).
 [Проверка системного пакета Pixman и обновления образа](docs/validation-system-packages-2026-09-27.md).
+[Проверка основы X11 и системного обновления](docs/validation-x11-foundation-2026-09-27.md).

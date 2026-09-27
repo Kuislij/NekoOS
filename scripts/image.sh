@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 source "$(dirname -- "${BASH_SOURCE[0]}")/common.sh"
+source "$root/configs/system-packages.sh"
 [[ -n "${FAKEROOTKEY:-}" ]] || die 'Internal command: invoke through bash os build.'
 [[ $# == 1 && -f "$1" ]] || die 'Expected a built BusyBox binary.'
 stage="$root/build/rootfs"
@@ -22,8 +23,11 @@ cp -a "$toolchain/usr/lib/." "$stage/usr/lib/"
 cp -a "$toolchain/lib/ld-musl-x86_64.so.1" "$stage/usr/lib/ld-musl-x86_64.so.1"
 install -m 755 "$toolchain/usr/bin/tcc" "$stage/usr/bin/tcc"
 ln -s tcc "$stage/usr/bin/cc"
-python3 "$root/tools/system_package.py" install \
-    "$root/build/system-packages/pixman-0.46.4.nspkg" --root "$stage"
+archives=()
+for package in "${system_package_archives[@]}"; do
+    archives+=("$root/build/system-packages/$package")
+done
+python3 "$root/tools/system_package.py" install "${archives[@]}" --root "$stage"
 "$root/scripts/host-musl-gcc.sh" "$root/tests/pixman_runtime.c" \
     -I "$stage/usr/include/pixman-1" -L "$stage/usr/lib" -lpixman-1 \
     -o "$stage/usr/bin/neko-pixman-check"
@@ -34,6 +38,28 @@ readelf -d "$stage/usr/bin/neko-pixman-check" |
 if readelf -d "$stage/usr/bin/neko-pixman-check" | grep -Eq 'RPATH|RUNPATH'; then
     die 'Pixman probe must use the system library path.'
 fi
+"$root/scripts/host-musl-gcc.sh" "$root/tests/x11_auth_runtime.c" \
+    -I "$stage/usr/include" -L "$stage/usr/lib" -lXau -lXdmcp \
+    -o "$stage/usr/bin/neko-x11-base-check"
+x11_dynamic="$(readelf -d "$stage/usr/bin/neko-x11-base-check")"
+grep -Fq 'libXau.so.6' <<< "$x11_dynamic" || die 'X11 probe lacks libXau.'
+grep -Fq 'libXdmcp.so.6' <<< "$x11_dynamic" || die 'X11 probe lacks libXdmcp.'
+if grep -Eq 'RPATH|RUNPATH' <<< "$x11_dynamic"; then
+    die 'X11 probe must use the system library path.'
+fi
+"$root/scripts/host-musl-gcc.sh" "$root/tests/xcb_runtime.c" \
+    -I "$stage/usr/include" -L "$stage/usr/lib" \
+    -Wl,-rpath-link,"$stage/usr/lib" -lxcb \
+    -o "$stage/usr/bin/neko-xcb-check"
+xcb_dynamic="$(readelf -d "$stage/usr/bin/neko-xcb-check")"
+grep -Fq 'libxcb.so.1' <<< "$xcb_dynamic" || die 'XCB probe lacks libxcb.'
+if grep -Eq 'RPATH|RUNPATH' <<< "$xcb_dynamic"; then
+    die 'XCB probe must use the system library path.'
+fi
+for probe in neko-x11-base-check neko-xcb-check; do
+    readelf -l "$stage/usr/bin/$probe" |
+        grep -Fq '/lib/ld-musl-x86_64.so.1' || die "$probe uses the wrong interpreter."
+done
 bash "$root/scripts/build-neko-desktop.sh" "$root/build/neko-desktop"
 install -m 755 "$root/build/neko-desktop" "$stage/usr/bin/neko-desktop"
 "$1" --list > "$root/build/busybox-applets.txt"

@@ -82,12 +82,17 @@ def validate(entries):
         'root', 'run', 'run/lock', 'state', 'sys', 'tmp', 'usr', 'usr/bin',
         'usr/include', 'usr/lib', 'usr/lib/tcc', 'usr/lib/tcc/include',
         'usr/include/pixman-1', 'usr/lib/pkgconfig',
+        'usr/include/X11', 'usr/include/X11/extensions', 'usr/include/GL',
+        'usr/include/xcb',
         'usr/lib64', 'usr/local', 'usr/local/bin', 'usr/local/etc',
         'usr/local/etc/neko', 'usr/local/etc/neko/services', 'usr/local/lib',
         'usr/local/sbin', 'usr/sbin', 'usr/share', 'usr/share/nekoos',
         'usr/share/nekoos/examples', 'usr/share/nekoos/packages', 'var', 'var/cache',
         'usr/share/nekoos/system-packages', 'usr/share/licenses',
         'usr/share/licenses/pixman',
+        'usr/share/licenses/xorgproto', 'usr/share/licenses/libxau',
+        'usr/share/licenses/libxdmcp', 'usr/share/pkgconfig',
+        'usr/share/licenses/libxcb',
         'var/lib', 'var/lib/neko-services', 'var/lib/neko-services/enabled',
         'var/lib/neko-services/disabled', 'var/log', 'var/tmp'
     ):
@@ -99,6 +104,9 @@ def validate(entries):
         'usr/bin/cc': b'tcc',
         'usr/lib/ld-musl-x86_64.so.1': b'/usr/lib/libc.so',
         'usr/lib/libpixman-1.so': b'libpixman-1.so.0',
+        'usr/lib/libXau.so.6': b'libXau.so.6.0.0',
+        'usr/lib/libXdmcp.so.6': b'libXdmcp.so.6.0.0',
+        'usr/lib/libxcb.so.1': b'libxcb.so.1.1.0',
         'usr/sbin/init': b'../bin/busybox'
     }.items():
         require(entry(path, stat.S_ISLNK, 'symlink')[1] == target,
@@ -108,6 +116,8 @@ def validate(entries):
                  'usr/bin/neko-pkg',
                  'usr/bin/neko-service', 'etc/neko/services/network',
                  'usr/bin/neko-pixman-check',
+                 'usr/bin/neko-x11-base-check',
+                 'usr/bin/neko-xcb-check',
                  'etc/neko/services/desktop',
                  'usr/bin/tcc', 'usr/lib/libc.so', 'init', 'neko-update'):
         mode = entry(path, stat.S_ISREG, 'regular file')[0]
@@ -128,6 +138,20 @@ def validate(entries):
                  'usr/share/licenses/pixman/COPYING',
                  'usr/share/nekoos/system-packages/pixman.manifest',
                  'usr/lib/libpixman-1.so.0.46.4',
+                 'usr/include/X11/X.h', 'usr/include/X11/Xauth.h',
+                 'usr/include/X11/Xdmcp.h', 'usr/share/pkgconfig/xproto.pc',
+                 'usr/lib/pkgconfig/xau.pc', 'usr/lib/pkgconfig/xdmcp.pc',
+                 'usr/lib/libXau.so.6.0.0', 'usr/lib/libXdmcp.so.6.0.0',
+                 'usr/share/licenses/libxau/COPYING',
+                 'usr/share/licenses/libxdmcp/COPYING',
+                 'usr/share/licenses/xorgproto/COPYING-glproto',
+                 'usr/share/nekoos/system-packages/xorgproto.manifest',
+                 'usr/share/nekoos/system-packages/libxau.manifest',
+                 'usr/share/nekoos/system-packages/libxdmcp.manifest',
+                 'usr/include/xcb/xcb.h', 'usr/lib/pkgconfig/xcb.pc',
+                 'usr/lib/libxcb.so.1.1.0',
+                 'usr/share/licenses/libxcb/COPYING',
+                 'usr/share/nekoos/system-packages/libxcb.manifest',
                  'usr/include/linux/version.h',
                  'usr/lib/libc.a', 'usr/lib/crt1.o', 'usr/lib/tcc/libtcc1.a'):
         entry(path, stat.S_ISREG, 'regular file')

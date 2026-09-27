@@ -2,8 +2,17 @@
 # Build pinned upstream components that become part of the NekoOS /usr tree.
 set -euo pipefail
 source "$(dirname -- "${BASH_SOURCE[0]}")/common.sh"
+source "$root/configs/system-packages.sh"
 (( $# == 0 )) || die 'Usage: bash scripts/build-system-packages.sh'
 
 bash "$root/recipes/pixman/build.sh"
-python3 "$root/tools/system_package.py" verify \
-    "$root/build/system-packages/pixman-0.46.4.nspkg"
+bash "$root/recipes/xorgproto/build.sh"
+bash "$root/recipes/libxau/build.sh"
+bash "$root/recipes/libxdmcp/build.sh"
+bash "$root/recipes/xcb-proto/build.sh"
+bash "$root/recipes/pkgconf/build.sh"
+bash "$root/recipes/libxcb/build.sh"
+for package in "${system_package_archives[@]}"; do
+    python3 "$root/tools/system_package.py" verify \
+        "$root/build/system-packages/$package"
+done

@@ -18,7 +18,8 @@ spec.loader.exec_module(system_package)
 SOURCE_HASH = hashlib.sha256(b'upstream source archive').hexdigest()
 
 
-def make_archive(root, name, files, output=None, dependencies=()):
+def make_archive(root, name, files, output=None, dependencies=(),
+                 version='1.2.3', arch='x86_64'):
     stage = root / f'{name}-stage'
     (stage / 'usr').mkdir(parents=True)
     for path, body in files.items():
@@ -29,7 +30,7 @@ def make_archive(root, name, files, output=None, dependencies=()):
         else:
             target.write_bytes(body)
     result = output or root / f'{name}.nspkg'
-    system_package.build(stage, result, name, '1.2.3', 'x86_64', 'MIT',
+    system_package.build(stage, result, name, version, arch, 'MIT',
                          SOURCE_HASH, dependencies, epoch=1_700_000_000)
     return result
 
@@ -143,6 +144,142 @@ class SystemPackageTests(unittest.TestCase):
                             archive.addfile(info)
                 with self.assertRaises(system_package.PackageError):
                     system_package.verify(tampered)
+
+    def test_missing_dependency_fails_before_writing(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            consumer = make_archive(root, 'consumer', {'usr/bin/consumer': b'C'},
+                                    dependencies=['provider>=1.2.3'])
+            target = root / 'rootfs'
+            target.mkdir()
+            with self.assertRaisesRegex(system_package.PackageError,
+                                        'missing dependency'):
+                system_package.install([consumer], target)
+            self.assertFalse((target / 'usr').exists())
+
+    def test_numeric_version_constraint_and_transaction_order(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            provider = make_archive(root, 'provider', {'usr/lib/provider': b'P'},
+                                    version='1.2.9')
+            consumer = make_archive(root, 'consumer', {'usr/bin/consumer': b'C'},
+                                    dependencies=['provider>=1.2.10'])
+            target = root / 'rootfs'
+            target.mkdir()
+            with self.assertRaisesRegex(system_package.PackageError, 'too old'):
+                system_package.install([provider, consumer], target)
+            self.assertFalse((target / 'usr').exists())
+
+            newer = root / 'provider-new.nspkg'
+            system_package.build(root / 'provider-stage', newer, 'provider',
+                                 '1.2.10', 'x86_64', 'MIT', SOURCE_HASH,
+                                 epoch=1_700_000_000)
+            system_package.install([consumer, newer], target)
+            self.assertEqual((target / 'usr/bin/consumer').read_bytes(), b'C')
+            self.assertTrue(system_package._version_at_least('1.2', '1.2.0'))
+            self.assertFalse(system_package._version_at_least('1.2', '1.2.1'))
+
+    def test_dependency_satisfied_by_recorded_rootfs_package(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            provider = make_archive(root, 'provider', {'usr/lib/provider': b'P'},
+                                    version='2024.1')
+            consumer = make_archive(root, 'consumer', {'usr/bin/consumer': b'C'},
+                                    dependencies=['provider>=2024.1'])
+            target = root / 'rootfs'
+            target.mkdir()
+            system_package.install([provider], target)
+            system_package.install([consumer], target)
+            self.assertEqual((target / 'usr/bin/consumer').read_bytes(), b'C')
+            newer_consumer = make_archive(root, 'newer-consumer',
+                                          {'usr/bin/newer-consumer': b'N'},
+                                          dependencies=['provider>=2024.2'])
+            with self.assertRaisesRegex(system_package.PackageError, 'too old'):
+                system_package.install([newer_consumer], target)
+            self.assertFalse((target / 'usr/bin/newer-consumer').exists())
+
+    def test_wrong_architecture_in_transaction_and_installed_record(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            foreign = make_archive(root, 'foreign', {'usr/lib/foreign': b'F'},
+                                   arch='aarch64')
+            consumer = make_archive(root, 'consumer', {'usr/bin/consumer': b'C'},
+                                    dependencies=['foreign>=1.2.3'])
+            target = root / 'rootfs'
+            target.mkdir()
+            with self.assertRaisesRegex(system_package.PackageError,
+                                        'unsupported package architecture'):
+                system_package.install([foreign, consumer], target)
+            self.assertFalse((target / 'usr').exists())
+
+            record = target / 'usr/share/nekoos/system-packages/foreign.manifest'
+            record.parent.mkdir(parents=True)
+            record.write_bytes(system_package._json_bytes(system_package.verify(foreign)))
+            with self.assertRaisesRegex(system_package.PackageError,
+                                        'wrong architecture'):
+                system_package.install([consumer], target)
+            self.assertFalse((target / 'usr/bin/consumer').exists())
+
+    def test_untrusted_installed_dependency_record_is_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            provider = make_archive(root, 'provider', {'usr/lib/provider': b'P'})
+            consumer = make_archive(root, 'consumer', {'usr/bin/consumer': b'C'},
+                                    dependencies=['provider>=1.2.3'])
+            target = root / 'rootfs'
+            records = target / 'usr/share/nekoos/system-packages'
+            records.mkdir(parents=True)
+            outside = root / 'outside.manifest'
+            outside.write_bytes(system_package._json_bytes(system_package.verify(provider)))
+            record = records / 'provider.manifest'
+
+            record.symlink_to(outside)
+            with self.assertRaises(system_package.PackageError):
+                system_package.install([consumer], target)
+            self.assertFalse((target / 'usr/bin/consumer').exists())
+
+            record.unlink()
+            record.write_text('{broken', encoding='utf-8')
+            with self.assertRaisesRegex(system_package.PackageError,
+                                        'invalid installed package record'):
+                system_package.install([consumer], target)
+            self.assertFalse((target / 'usr/bin/consumer').exists())
+
+            record.write_bytes(outside.read_bytes() + b' ')
+            with self.assertRaisesRegex(system_package.PackageError,
+                                        'not canonical JSON'):
+                system_package.install([consumer], target)
+            self.assertFalse((target / 'usr/bin/consumer').exists())
+
+            record.write_bytes(b' ' * (system_package.MAX_MANIFEST + 1))
+            with self.assertRaisesRegex(system_package.PackageError,
+                                        'too large'):
+                system_package.install([consumer], target)
+            self.assertFalse((target / 'usr/bin/consumer').exists())
+
+            record.unlink()
+            records.rmdir()
+            outside_dir = root / 'outside-dir'
+            outside_dir.mkdir()
+            (outside_dir / 'provider.manifest').write_bytes(outside.read_bytes())
+            records.symlink_to(outside_dir, target_is_directory=True)
+            with self.assertRaises(system_package.PackageError):
+                system_package.install([consumer], target)
+            self.assertFalse((target / 'usr/bin/consumer').exists())
+
+    def test_cyclic_dependency_fails_before_writing(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            first = make_archive(root, 'first', {'usr/lib/first': b'A'},
+                                 dependencies=['second>=1.2.3'])
+            second = make_archive(root, 'second', {'usr/lib/second': b'B'},
+                                  dependencies=['first>=1.2.3'])
+            target = root / 'rootfs'
+            target.mkdir()
+            with self.assertRaisesRegex(system_package.PackageError,
+                                        'cyclic package dependency'):
+                system_package.install([first, second], target)
+            self.assertFalse((target / 'usr').exists())
 
 
 if __name__ == '__main__':
