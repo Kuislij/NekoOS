@@ -9,7 +9,7 @@ import time
 from pathlib import Path
 
 from boot_test import (ROOT, graphics_monitor_option, graphics_monitor_path,
-                       hmp_response)
+                       graphics_qmp_path, graphics_absolute_input, hmp_response)
 
 
 GUEST_COMMAND = b'''neko-service stop desktop || true
@@ -21,7 +21,7 @@ for event in /dev/input/event*; do
         printf 'XORG_INPUT_FOUND: %s %s\n' "$event" "$name"
         case "$name" in
             *Keyboard*) keyboard=$event ;;
-            *Mouse*) pointer=$event ;;
+            *Mouse*|*Tablet*) pointer=$event ;;
         esac
     fi
 done
@@ -88,7 +88,7 @@ poweroff
 '''
 
 
-def send_input(monitor_path, deadline):
+def send_input(monitor_path, qmp_path, deadline):
     """Inject input through QEMU, rather than synthesizing X11 client events."""
     connection = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     try:
@@ -102,8 +102,10 @@ def send_input(monitor_path, deadline):
         else:
             raise RuntimeError('QEMU monitor did not become available')
         hmp_response(connection, deadline)
-        for command in ('sendkey a', 'mouse_move 24 18', 'mouse_button 1',
-                        'mouse_button 0'):
+        connection.sendall(b'sendkey a\n')
+        hmp_response(connection, deadline)
+        graphics_absolute_input(qmp_path, deadline)
+        for command in ('mouse_button 1', 'mouse_button 0'):
             connection.sendall((command + '\n').encode('ascii'))
             hmp_response(connection, deadline)
             time.sleep(0.15)
@@ -115,13 +117,15 @@ def run_xorg_guest(images, disk):
     log = ROOT / 'build/logs/xorg-smoke-test-1.log'
     log.parent.mkdir(parents=True, exist_ok=True)
     monitor_path = graphics_monitor_path()
+    qmp_path = graphics_qmp_path()
     command = [
         'qemu-system-x86_64', '-machine', 'q35', '-accel', 'tcg',
         '-cpu', 'qemu64', '-m', '512M', '-smp', '2', '-nodefaults',
         '-display', 'none', '-monitor', graphics_monitor_option(monitor_path),
+        '-qmp', graphics_monitor_option(qmp_path),
         '-serial', 'stdio', '-nic', 'none', '-no-reboot',
         '-device', 'virtio-vga', '-device', 'virtio-keyboard-pci',
-        '-device', 'virtio-mouse-pci',
+        '-device', 'virtio-tablet-pci',
         '-drive', f'file={disk},format=raw,if=virtio',
         '-kernel', str(images / 'bzImage'),
         '-initrd', str(images / 'initramfs.cpio.gz'),
@@ -146,13 +150,14 @@ def run_xorg_guest(images, disk):
                     process.stdin.flush()
                     command_sent = True
                 if 'XORG_INPUT_CLIENT_READY' in lines and not input_sent:
-                    send_input(monitor_path, deadline)
+                    send_input(monitor_path, qmp_path, deadline)
                     input_sent = True
                 code = process.poll()
                 if code is not None:
                     lines = log.read_text(errors='replace').replace('\r', '').splitlines()
                     markers = ('XORG_CLIENT_READY', 'XORG_INPUT_CLIENT_READY',
                                'XORG_KEY_EVENT_READY', 'XORG_MOUSE_EVENT_READY',
+                               'XORG_POINTER_MOVE_READY',
                                'XORG_CLIENT_INPUT_READY', 'XORG_INPUT_READY',
                                'XORG_DISPLAY_READY')
                     if (code == 0 and command_sent and input_sent and
@@ -175,6 +180,7 @@ def run_xorg_guest(images, disk):
                     process.wait()
             process.stdin.close()
             monitor_path.unlink(missing_ok=True)
+            qmp_path.unlink(missing_ok=True)
 
 
 def main():

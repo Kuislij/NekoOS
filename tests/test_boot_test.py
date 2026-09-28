@@ -112,12 +112,13 @@ class GraphicsInputTests(unittest.TestCase):
                 'sendkey x', 'sendkey t', 'sendkey ret',
             ])
 
-    def test_guest_check_requires_file_created_by_gui(self):
+    def test_guest_check_requires_file_and_pointer_input(self):
         command = boot_test.graphics_guest_command()
         readiness = boot_test.graphics_ready_command()
         self.assertIn(b'NEKO_DESKTOP_INPUT_READY', readiness)
         self.assertIn(b'/run/neko/services/desktop.log', readiness)
         self.assertIn(b'test -f /home/neko/test.txt && ', command)
+        self.assertIn(b'NEKO_DESKTOP_POINTER_READY', command)
         self.assertIn(b"'GUI_FILE_' 'CREATED'", command)
         markers = [
             'GRAPHICS_READY', 'NEKO_SESSION_READY',
@@ -125,8 +126,10 @@ class GraphicsInputTests(unittest.TestCase):
             'NEKO_DESKTOP_FRAME_READY width=1024 height=768 depth=32',
         ]
         self.assertFalse(boot_test.graphics_markers_present(markers))
-        self.assertTrue(boot_test.graphics_markers_present(
+        self.assertFalse(boot_test.graphics_markers_present(
             markers + ['GUI_FILE_CREATED']))
+        self.assertTrue(boot_test.graphics_markers_present(
+            markers + ['GUI_FILE_CREATED', 'GUI_POINTER_READY']))
 
     def test_hmp_rejects_command_errors(self):
         client, server = socket.socketpair()

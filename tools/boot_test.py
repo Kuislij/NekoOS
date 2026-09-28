@@ -3,6 +3,7 @@
 import argparse
 import fcntl
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import json
 import os
 from pathlib import Path
 import secrets
@@ -102,14 +103,16 @@ def boot_graphics(args):
     log = ROOT / 'build/logs/graphics-test.log'
     log.parent.mkdir(parents=True, exist_ok=True)
     monitor_path = graphics_monitor_path()
+    qmp_path = graphics_qmp_path()
     command = [
         'qemu-system-x86_64', '-machine', 'q35', '-accel', 'tcg',
         '-cpu', 'qemu64', '-m', '512M', '-smp', '2', '-nodefaults',
         '-display', 'none', '-monitor', graphics_monitor_option(monitor_path),
+        '-qmp', graphics_monitor_option(qmp_path),
         '-serial', 'stdio',
         '-nic', 'none', '-no-reboot',
         '-device', 'virtio-vga', '-device', 'virtio-keyboard-pci',
-        '-device', 'virtio-mouse-pci',
+        '-device', 'virtio-tablet-pci',
         '-kernel', str(images / 'bzImage'),
         '-initrd', str(images / 'initramfs.cpio.gz'),
         '-append', 'console=ttyS0,115200 rdinit=/init panic=-1',
@@ -134,6 +137,7 @@ def boot_graphics(args):
                     probe_sent = True
                 if probe_sent and not input_sent and 'DESKTOP_INPUT_READY' in lines:
                     graphics_key_input(monitor_path, deadline)
+                    graphics_absolute_input(qmp_path, deadline)
                     input_sent = True
                 if ready and input_sent and not sent:
                     process.stdin.write(
@@ -163,11 +167,18 @@ def boot_graphics(args):
                     process.wait()
             process.stdin.close()
             monitor_path.unlink(missing_ok=True)
+            qmp_path.unlink(missing_ok=True)
 
 
 def graphics_monitor_path():
     return Path(tempfile.gettempdir()) / (
         f'neko-hmp-{os.getpid()}-{secrets.token_hex(4)}.sock'
+    )
+
+
+def graphics_qmp_path():
+    return Path(tempfile.gettempdir()) / (
+        f'neko-qmp-{os.getpid()}-{secrets.token_hex(4)}.sock'
     )
 
 
@@ -225,6 +236,61 @@ def graphics_key_input(monitor_path, deadline):
             time.sleep(0.20 if key in ('f', 'n') else 0.10)
 
 
+def graphics_absolute_input(qmp_path, deadline):
+    """Send real absolute tablet movement through QEMU's QMP input API."""
+    connection = None
+    while time.monotonic() < deadline:
+        connection = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        try:
+            connection.settimeout(min(2.0, deadline - time.monotonic()))
+            connection.connect(str(qmp_path))
+            break
+        except (FileNotFoundError, ConnectionRefusedError):
+            connection.close()
+            connection = None
+            time.sleep(0.05)
+        except OSError:
+            connection.close()
+            raise
+    if connection is None:
+        raise RuntimeError('QEMU QMP monitor did not become available')
+
+    with connection, connection.makefile('rwb') as stream:
+        def receive():
+            while True:
+                line = stream.readline()
+                if not line:
+                    raise RuntimeError('QEMU QMP monitor closed unexpectedly')
+                response = json.loads(line)
+                if 'event' not in response:
+                    return response
+
+        def execute(command, arguments=None):
+            request = {'execute': command}
+            if arguments is not None:
+                request['arguments'] = arguments
+            stream.write(json.dumps(request).encode('ascii') + b'\r\n')
+            stream.flush()
+            response = receive()
+            if 'error' in response or 'return' not in response:
+                raise RuntimeError(f'QEMU QMP rejected {command}: {response!r}')
+            return response['return']
+
+        if 'QMP' not in receive():
+            raise RuntimeError('QEMU QMP greeting is invalid')
+        execute('qmp_capabilities')
+        mice = execute('query-mice')
+        if not any(mouse.get('current') and mouse.get('absolute')
+                   for mouse in mice):
+            raise RuntimeError('QEMU did not select an absolute pointer')
+        for x, y in ((1000, 1000), (30000, 25000)):
+            execute('input-send-event', {'events': [
+                {'type': 'abs', 'data': {'axis': 'x', 'value': x}},
+                {'type': 'abs', 'data': {'axis': 'y', 'value': y}},
+            ]})
+            time.sleep(0.15)
+
+
 def graphics_ready_command():
     # Managed service output is redirected to this log, not to the serial shell.
     return (
@@ -243,6 +309,10 @@ def graphics_guest_command():
         b'test -c /dev/dri/card0 && '
         b'test -c /dev/fb0 && '
         b'ls /dev/input/event* >/dev/null && '
+        b'(i=0; until grep -Fq NEKO_DESKTOP_POINTER_READY '
+        b'/run/neko/services/desktop.log 2>/dev/null; do '
+        b'i=$((i + 1)); [ "$i" -lt 6 ] || exit 1; sleep 1; done) && '
+        b"printf '\\n%s%s\\n' 'GUI_POINTER_' 'READY' && "
         b'(i=0; until test -f /home/neko/test.txt; do '
         b'i=$((i + 1)); [ "$i" -lt 6 ] || exit 1; sleep 1; done) && '
         b'test -f /home/neko/test.txt && '
@@ -259,7 +329,7 @@ def graphics_guest_command():
 
 def graphics_markers_present(lines):
     return ('GRAPHICS_READY' in lines and 'DESKTOP_INPUT_READY' in lines
-            and 'GUI_FILE_CREATED' in lines
+            and 'GUI_FILE_CREATED' in lines and 'GUI_POINTER_READY' in lines
             and 'NEKO_SESSION_READY' in lines
             and any(line.startswith('NEKO_DESKTOP_FRAME_READY width=')
                     for line in lines))
@@ -852,6 +922,7 @@ def run_disk_guest(images, disk, guest_command, marker, pass_number, timeout, is
     log = ROOT / 'build/logs' / f'{prefix}-test-{pass_number}.log'
     log.parent.mkdir(parents=True, exist_ok=True)
     monitor_path = graphics_monitor_path() if graphics else None
+    qmp_path = graphics_qmp_path() if graphics else None
     command = [
         'qemu-system-x86_64', '-machine', 'q35', '-accel', 'tcg',
         '-cpu', 'qemu64', '-m', ('512M' if graphics or video else '256M'), '-smp', '2', '-nodefaults',
@@ -861,9 +932,11 @@ def run_disk_guest(images, disk, guest_command, marker, pass_number, timeout, is
         '-nic', ('user,model=virtio-net-pci,ipv6=off' if network else 'none'),
         '-no-reboot',
     ]
+    if graphics:
+        command += ['-qmp', graphics_monitor_option(qmp_path)]
     if graphics or video:
         command += ['-device', 'virtio-vga', '-device', 'virtio-keyboard-pci',
-                    '-device', 'virtio-mouse-pci']
+                    '-device', 'virtio-tablet-pci']
     if system_disk is not None:
         command += ['-drive', f'file={system_disk},format=raw,if=virtio']
     command += ['-drive', f'file={disk},format=raw,if=virtio']
@@ -904,6 +977,7 @@ def run_disk_guest(images, disk, guest_command, marker, pass_number, timeout, is
                 if graphics and probe_sent and not input_sent and \
                         'DESKTOP_INPUT_READY' in lines:
                     graphics_key_input(monitor_path, deadline)
+                    graphics_absolute_input(qmp_path, deadline)
                     input_sent = True
                 if ready and input_sent and not sent:
                     process.stdin.write(guest_command)
@@ -934,6 +1008,8 @@ def run_disk_guest(images, disk, guest_command, marker, pass_number, timeout, is
             process.stdin.close()
             if monitor_path is not None:
                 monitor_path.unlink(missing_ok=True)
+            if qmp_path is not None:
+                qmp_path.unlink(missing_ok=True)
 
 
 if __name__ == '__main__':

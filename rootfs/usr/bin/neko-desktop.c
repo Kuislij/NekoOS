@@ -39,7 +39,12 @@ typedef struct {
 } Framebuffer;
 
 typedef struct {
-    int fd[MAX_INPUTS];
+    struct {
+        int fd;
+        struct input_absinfo abs_x;
+        struct input_absinfo abs_y;
+        int absolute;
+    } device[MAX_INPUTS];
     size_t count;
 } Inputs;
 
@@ -594,13 +599,22 @@ static void open_inputs(Inputs *inputs)
         char path[64];
         snprintf(path, sizeof path, "/dev/input/event%d", i);
         int fd = open(path, O_RDONLY | O_NONBLOCK | O_CLOEXEC);
-        if (fd >= 0) inputs->fd[inputs->count++] = fd;
+        if (fd < 0) continue;
+        size_t index = inputs->count++;
+        inputs->device[index].fd = fd;
+        if (ioctl(fd, EVIOCGABS(ABS_X), &inputs->device[index].abs_x) == 0 &&
+            ioctl(fd, EVIOCGABS(ABS_Y), &inputs->device[index].abs_y) == 0 &&
+            inputs->device[index].abs_x.maximum >
+                inputs->device[index].abs_x.minimum &&
+            inputs->device[index].abs_y.maximum >
+                inputs->device[index].abs_y.minimum)
+            inputs->device[index].absolute = 1;
     }
 }
 
 static void close_inputs(Inputs *inputs)
 {
-    for (size_t i = 0; i < inputs->count; i++) close(inputs->fd[i]);
+    for (size_t i = 0; i < inputs->count; i++) close(inputs->device[i].fd);
 }
 
 static void desktop_init(Desktop *d, int width, int height)
@@ -949,6 +963,16 @@ static int move_pointer(Desktop *d, int dx, int dy)
     return 1;
 }
 
+static int absolute_position(int value, const struct input_absinfo *axis,
+                             int screen_size)
+{
+    int64_t position = value;
+    if (position < axis->minimum) position = axis->minimum;
+    if (position > axis->maximum) position = axis->maximum;
+    return (int)((position - axis->minimum) * (screen_size - 1) /
+                 ((int64_t)axis->maximum - axis->minimum));
+}
+
 
 static int write_preview(const Canvas *c, const char *path)
 {
@@ -1045,6 +1069,7 @@ int main(int argc, char **argv)
 
     Inputs inputs;
     open_inputs(&inputs);
+    int absolute_seen = 0;
     if (inputs.count > 0) {
         puts("NEKO_DESKTOP_INPUT_READY");
         fflush(stdout);
@@ -1053,7 +1078,7 @@ int main(int argc, char **argv)
     while (!stop_requested) {
         struct pollfd pfds[MAX_INPUTS];
         for (size_t i = 0; i < inputs.count; i++) {
-            pfds[i].fd = inputs.fd[i];
+            pfds[i].fd = inputs.device[i].fd;
             pfds[i].events = POLLIN;
             pfds[i].revents = 0;
         }
@@ -1067,12 +1092,28 @@ int main(int argc, char **argv)
         for (size_t i = 0; i < inputs.count; i++) {
             if (!(pfds[i].revents & POLLIN)) continue;
             struct input_event event;
-            while (read(inputs.fd[i], &event, sizeof event) == sizeof event) {
+            while (read(inputs.device[i].fd, &event, sizeof event) ==
+                   sizeof event) {
                 if (event.type == EV_REL &&
                     (event.code == REL_X || event.code == REL_Y)) {
                     changed |= move_pointer(d,
                         event.code == REL_X ? event.value : 0,
                         event.code == REL_Y ? event.value : 0);
+                } else if (event.type == EV_ABS &&
+                           inputs.device[i].absolute &&
+                           (event.code == ABS_X || event.code == ABS_Y)) {
+                    int x = event.code == ABS_X ?
+                        absolute_position(event.value, &inputs.device[i].abs_x,
+                                          d->wm.screen_width) : d->mouse_x;
+                    int y = event.code == ABS_Y ?
+                        absolute_position(event.value, &inputs.device[i].abs_y,
+                                          d->wm.screen_height) : d->mouse_y;
+                    changed |= move_pointer(d, x - d->mouse_x, y - d->mouse_y);
+                    if (!absolute_seen) {
+                        puts("NEKO_DESKTOP_POINTER_READY");
+                        fflush(stdout);
+                        absolute_seen = 1;
+                    }
                 } else if (event.type == EV_REL && event.code == REL_WHEEL &&
                            d->wm.focused_id == d->app_ids[APP_FILES]) {
                     if (event.value < 0 && d->file_scroll + 1 < d->files.entry_count)

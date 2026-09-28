@@ -13,6 +13,7 @@ static int check_input(Display *display, Window window)
     time_t deadline;
     int key_seen = 0;
     int button_seen = 0;
+    int motion_seen = 0;
 
     XSelectInput(display, window, KeyPressMask | ButtonPressMask |
                                 PointerMotionMask);
@@ -37,7 +38,7 @@ static int check_input(Display *display, Window window)
     deadline = now.tv_sec + 30;
     puts("XORG_INPUT_CLIENT_READY");
     fflush(stdout);
-    while (!key_seen || !button_seen) {
+    while (!key_seen || !button_seen || !motion_seen) {
         struct pollfd connection = { ConnectionNumber(display), POLLIN, 0 };
         if (clock_gettime(CLOCK_MONOTONIC, &now) != 0 ||
             now.tv_sec >= deadline) {
@@ -62,6 +63,11 @@ static int check_input(Display *display, Window window)
                 puts("XORG_MOUSE_EVENT_READY");
                 fflush(stdout);
                 button_seen = 1;
+            }
+            if (!motion_seen && event.type == MotionNotify) {
+                puts("XORG_POINTER_MOVE_READY");
+                fflush(stdout);
+                motion_seen = 1;
             }
         }
     }

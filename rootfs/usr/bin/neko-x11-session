@@ -43,11 +43,11 @@ for event in /dev/input/event*; do
     name=$(cat "/sys/class/input/${event##*/}/device/name" 2>/dev/null || true)
     case "$name" in
         *Keyboard*) keyboard=$event ;;
-        *Mouse*) pointer=$event ;;
+        *Mouse*|*Tablet*) pointer=$event ;;
     esac
 done
 if [ -z "$keyboard" ] || [ -z "$pointer" ]; then
-    echo 'neko-x11-session: QEMU keyboard or mouse was not found' >&2
+    echo 'neko-x11-session: QEMU keyboard or pointer was not found' >&2
     exit 1
 fi
 

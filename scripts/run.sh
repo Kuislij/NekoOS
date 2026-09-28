@@ -40,7 +40,7 @@ append="console=ttyS0,115200 rdinit=/init panic=-1 $quiet"
 display_args=(-display none)
 memory=256M
 if [[ "$graphics" == on ]]; then
-    display_args=(-display gtk -device virtio-vga -device virtio-keyboard-pci -device virtio-mouse-pci)
+    display_args=(-display gtk -device virtio-vga -device virtio-keyboard-pci -device virtio-tablet-pci)
     memory=512M
     # Kernel messages stay on serial instead of drawing over the desktop.
     echo 'Открываю графический экран NekoOS в QEMU. Текстовая консоль остаётся в этом терминале.'
