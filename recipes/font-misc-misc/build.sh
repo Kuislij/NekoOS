@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Package two upstream X.Org bitmap fonts for the first local X server.
+# Convert two upstream X.Org bitmap fonts to Xorg-loadable PCF files.
 set -euo pipefail
 source "$(dirname -- "${BASH_SOURCE[0]}")/../../scripts/common.sh"
 (( $# == 0 )) || die 'Usage: bash recipes/font-misc-misc/build.sh'
@@ -11,9 +11,12 @@ url=https://xorg.freedesktop.org/archive/individual/font/$archive
 sha256=79abe361f58bb21ade9f565898e486300ce1cc621d5285bec26e14b6a8618fed
 sha512=fac4bfda0e4189d1a9999abc47bdd404f2beeec5301da190d92afc2176cd344789b7223c1b2f4748bd0efe1b9a81fa7f13f7037015d5d800480fa2236f369b48
 
-for tool in curl sha256sum sha512sum tar grep head wc install python3; do
+for tool in curl sha256sum sha512sum tar grep head wc install python3 od; do
     command -v "$tool" >/dev/null || die "$tool is required on the Linux build host."
 done
+converter="$root/build/host-tools/bdftopcf-1.1.2/install/bin/bdftopcf"
+[[ -x "$converter" ]] ||
+    die 'Build the pinned host bdftopcf first (bash recipes/bdftopcf/build.sh).'
 source_file="$root/cache/sources/$archive"
 if [[ ! -f "$source_file" ]]; then
     curl --fail --location --proto '=https' --proto-redir '=https' \
@@ -36,9 +39,8 @@ stage="$work/stage"
 fontdir="$stage/usr/share/fonts/X11/misc"
 mkdir -p "$fontdir"
 
-# The verified upstream BDF files can be read directly by libXfont2's BDF
-# backend. This avoids a host bdftopcf/mkfontdir dependency for the first Xorg
-# milestone; fonts.dir uses each font's own XLFD name from the BDF header.
+# Xorg's bitmap-font path needs compiled PCF files, not the upstream BDF source.
+# fonts.dir uses each font's own XLFD name from the verified BDF header.
 fonts=(6x13.bdf 9x15.bdf)
 printf '%d\n' "${#fonts[@]}" > "$fontdir/fonts.dir"
 for font in "${fonts[@]}"; do
@@ -46,8 +48,11 @@ for font in "${fonts[@]}"; do
     [[ -f "$source_font" ]] || die "Upstream font is missing: $font"
     xlfd_line="$(grep -m 1 '^FONT ' "$source_font")"
     [[ "$xlfd_line" == 'FONT -'* ]] || die "Invalid XLFD declaration: $font"
-    install -m 644 "$source_font" "$fontdir/$font"
-    printf '%s %s\n' "$font" "${xlfd_line#FONT }" >> "$fontdir/fonts.dir"
+    converted="${font%.bdf}.pcf"
+    "$converter" -o "$fontdir/$converted" "$source_font"
+    [[ "$(od -An -tx1 -N4 "$fontdir/$converted")" == *'01 66 63 70'* ]] ||
+        die "The converted PCF font is invalid: $converted"
+    printf '%s %s\n' "$converted" "${xlfd_line#FONT }" >> "$fontdir/fonts.dir"
 done
 
 small_xlfd="$(grep -m 1 '^FONT ' "$src/6x13.bdf")"

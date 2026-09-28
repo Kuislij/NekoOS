@@ -7,6 +7,7 @@ boot=direct
 network=off
 system=off
 graphics=off
+x11=off
 for option in "$@"; do
     case "$option" in
         --verbose) quiet='' ;;
@@ -15,11 +16,13 @@ for option in "$@"; do
         --net) network=on ;;
         --system) system=on ;;
         --graphics) graphics=on ;;
-        *) die 'Usage: bash os run [--ram] [--iso] [--system] [--net] [--graphics] [--verbose]' ;;
+        --x11) graphics=on; x11=on ;;
+        *) die 'Usage: bash os run [--ram] [--iso] [--system] [--net] [--graphics|--x11] [--verbose]' ;;
     esac
 done
 [[ "$boot" != iso || "$mode" != ram ]] || die 'ISO boot currently requires the persistent virtual disk.'
 [[ "$system" != on || "$mode" == disk ]] || die '--system requires a virtual disk.'
+[[ "$x11" != on || "$boot" != iso ]] || die '--x11 is not yet available with --iso.'
 mkdir -p "$root/build/logs"
 echo 'Сборка NekoOS; подробный вывод: build/logs/build.log'
 if ! bash "$root/scripts/build.sh" > "$root/build/logs/run-build.log" 2>&1; then
@@ -41,6 +44,10 @@ if [[ "$graphics" == on ]]; then
     memory=512M
     # Kernel messages stay on serial instead of drawing over the desktop.
     echo 'Открываю графический экран NekoOS в QEMU. Текстовая консоль остаётся в этом терминале.'
+fi
+if [[ "$x11" == on ]]; then
+    append="$append neko.x11=1"
+    echo 'Запускаю отдельный X11-сеанс с оконным менеджером evilwm.'
 fi
 if [[ "$mode" == disk ]]; then
     bash "$root/scripts/create-disk.sh"

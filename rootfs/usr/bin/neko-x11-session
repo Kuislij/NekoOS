@@ -1,0 +1,185 @@
+#!/bin/sh
+# Opt-in Xorg session for the QEMU virtio display; the default desktop is unchanged.
+set -eu
+
+usage() {
+    echo 'Usage: neko-x11-session [--self-test|--service]' >&2
+    exit 2
+}
+
+[ "$#" -le 1 ] || usage
+case "${1:-}" in
+    ''|--self-test|--service) ;;
+    *) usage ;;
+esac
+if [ "$(id -u)" != 0 ]; then
+    echo 'neko-x11-session: start from the root console' >&2
+    exit 1
+fi
+for program in Xorg evilwm neko-x11-welcome neko-evilwm-check \
+               neko-x11-extensions-check setuidgid; do
+    [ -x "/usr/bin/$program" ] || {
+        echo "neko-x11-session: missing /usr/bin/$program" >&2
+        exit 1
+    }
+done
+[ -c /dev/dri/card0 ] || {
+    echo 'neko-x11-session: no DRM display (/dev/dri/card0)' >&2
+    exit 1
+}
+[ -d /home/neko ] && [ ! -L /home/neko ] || {
+    echo 'neko-x11-session: /home/neko is missing or unsafe' >&2
+    exit 1
+}
+[ ! -S /tmp/.X11-unix/X1 ] || {
+    echo 'neko-x11-session: X display :1 is already in use' >&2
+    exit 1
+}
+
+keyboard=
+pointer=
+for event in /dev/input/event*; do
+    [ -c "$event" ] || continue
+    name=$(cat "/sys/class/input/${event##*/}/device/name" 2>/dev/null || true)
+    case "$name" in
+        *Keyboard*) keyboard=$event ;;
+        *Mouse*) pointer=$event ;;
+    esac
+done
+if [ -z "$keyboard" ] || [ -z "$pointer" ]; then
+    echo 'neko-x11-session: QEMU keyboard or mouse was not found' >&2
+    exit 1
+fi
+
+# The root-owned runtime directory protects the generated input-device paths.
+umask 077
+run_dir=/run/neko-x11-session.$$
+mkdir "$run_dir"
+xorg_pid=
+wm_pid=
+client_pid=
+restart_desktop=0
+cleanup() {
+    status=$?
+    trap - EXIT HUP INT TERM
+    [ -z "$client_pid" ] || {
+        kill "$client_pid" 2>/dev/null || true
+        wait "$client_pid" 2>/dev/null || true
+    }
+    [ -z "$wm_pid" ] || {
+        kill "$wm_pid" 2>/dev/null || true
+        wait "$wm_pid" 2>/dev/null || true
+    }
+    [ -z "$xorg_pid" ] || {
+        kill "$xorg_pid" 2>/dev/null || true
+        wait "$xorg_pid" 2>/dev/null || true
+    }
+    if [ "$status" -ne 0 ]; then
+        [ ! -f "$run_dir/Xorg.log" ] || tail -n 60 "$run_dir/Xorg.log" >&2 || true
+        [ ! -f "$run_dir/evilwm.log" ] || cat "$run_dir/evilwm.log" >&2 || true
+        [ ! -f "$run_dir/welcome.log" ] || cat "$run_dir/welcome.log" >&2 || true
+    fi
+    rm -f "$run_dir/xorg.conf" "$run_dir/Xorg.log" \
+        "$run_dir/Xorg.stdout" "$run_dir/evilwm.log" "$run_dir/welcome.log"
+    rmdir "$run_dir" 2>/dev/null || true
+    if [ "$restart_desktop" = 1 ]; then
+        neko-service start desktop || true
+    fi
+}
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' HUP TERM
+
+if [ "${1:-}" != --service ] && neko-service status desktop >/dev/null 2>&1; then
+    neko-service stop desktop
+    restart_desktop=1
+fi
+
+cat > "$run_dir/xorg.conf" <<EOF
+Section "ServerFlags"
+    Option "AutoAddDevices" "false"
+    Option "AllowEmptyInput" "true"
+EndSection
+Section "Device"
+    Identifier "Video0"
+    Driver "modesetting"
+    Option "kmsdev" "/dev/dri/card0"
+    Option "AccelMethod" "none"
+    Option "ShadowFB" "true"
+    Option "SWcursor" "true"
+EndSection
+Section "Screen"
+    Identifier "Screen0"
+    Device "Video0"
+EndSection
+Section "InputDevice"
+    Identifier "Keyboard0"
+    Driver "evdev"
+    Option "Device" "$keyboard"
+    Option "CoreKeyboard"
+EndSection
+Section "InputDevice"
+    Identifier "Mouse0"
+    Driver "evdev"
+    Option "Device" "$pointer"
+    Option "CorePointer"
+EndSection
+Section "ServerLayout"
+    Identifier "Layout0"
+    Screen "Screen0"
+    InputDevice "Keyboard0" "CoreKeyboard"
+    InputDevice "Mouse0" "CorePointer"
+EndSection
+EOF
+
+Xorg :1 vt2 -config "$run_dir/xorg.conf" -logfile "$run_dir/Xorg.log" \
+    -nolisten tcp -noreset > "$run_dir/Xorg.stdout" 2>&1 &
+xorg_pid=$!
+ready=0
+for attempt in 1 2 3 4 5 6 7 8 9 10; do
+    if [ -S /tmp/.X11-unix/X1 ]; then
+        ready=1
+        break
+    fi
+    kill -0 "$xorg_pid" 2>/dev/null || break
+    sleep 1
+done
+if [ "$ready" != 1 ]; then
+    echo 'neko-x11-session: Xorg did not start' >&2
+    cat "$run_dir/Xorg.log" >&2 || true
+    exit 1
+fi
+
+unset CDPATH ENV BASH_ENV LD_PRELOAD LD_LIBRARY_PATH LD_AUDIT
+export PATH=/usr/bin:/bin HOME=/home/neko USER=neko LOGNAME=neko SHELL=/bin/sh DISPLAY=:1
+cd /home/neko
+/usr/bin/setuidgid neko /usr/bin/evilwm \
+    --fg '#75aaff' --bg '#273751' --fc '#7bd7bd' --bw 3 --fn fixed \
+    --term /usr/bin/neko-x11-welcome > "$run_dir/evilwm.log" 2>&1 &
+wm_pid=$!
+sleep 1
+if ! kill -0 "$wm_pid" 2>/dev/null; then
+    echo 'neko-x11-session: window manager did not start' >&2
+    cat "$run_dir/evilwm.log" >&2 || true
+    cat "$run_dir/Xorg.log" >&2 || true
+    exit 1
+fi
+
+if [ "${1:-}" = --self-test ]; then
+    /usr/bin/setuidgid neko /usr/bin/neko-x11-extensions-check
+    /usr/bin/setuidgid neko /usr/bin/neko-evilwm-check
+    echo NEKO_X11_SESSION_READY
+    exit 0
+fi
+
+echo 'NekoOS X11 session is running. Close the welcome window to return.'
+/usr/bin/setuidgid neko /usr/bin/neko-x11-welcome \
+    > "$run_dir/welcome.log" 2>&1 &
+client_pid=$!
+echo NEKO_X11_SESSION_RUNNING
+wait "$client_pid"
+client_pid=
+if [ "${1:-}" = --service ]; then
+    cleanup
+    exec /usr/bin/neko-session
+fi

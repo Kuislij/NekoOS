@@ -439,6 +439,7 @@ def boot(args):
                         b"neko-xlib-check && "
                         b"neko-xext-check && "
                         b"neko-xorg-stack-check && "
+                        b"neko-libffi-check && "
                         b"Xorg -version > /tmp/xorg-version 2>&1 && "
                         b"grep -Fq 'X.Org X Server 1.21.1.24' /tmp/xorg-version && "
                         b"uname -r && cat /etc/os-release && neko-help && "
@@ -459,6 +460,7 @@ def boot(args):
                             and 'XLIB_RUNTIME_READY' in lines
                             and 'XEXT_RUNTIME_READY' in lines
                             and 'XORG_STACK_RUNTIME_READY' in lines
+                            and 'LIBFFI_RUNTIME_READY' in lines
                             and 'Hello from NekoOS' in lines
                             and any('Power down' in line for line in lines)):
                         print(f'BOOT_TEST_PASSED: init, shell, filesystems, poweroff. Log: {log}')
@@ -807,6 +809,7 @@ def boot_system_update(args):
         "neko-xlib-check | grep -Fqx XLIB_RUNTIME_READY && "
         "neko-xext-check | grep -Fqx XEXT_RUNTIME_READY && "
         "neko-xorg-stack-check | grep -Fqx XORG_STACK_RUNTIME_READY && "
+        "neko-libffi-check | grep -Fqx LIBFFI_RUNTIME_READY && "
         "Xorg -version > /tmp/xorg-version 2>&1 && "
         "grep -Fq 'X.Org X Server 1.21.1.24' /tmp/xorg-version && "
         "test -f /usr/share/nekoos/etc-baseline.sha256 && "
@@ -844,7 +847,7 @@ def boot_system_update(args):
 
 def run_disk_guest(images, disk, guest_command, marker, pass_number, timeout, iso,
                    log_prefix=None, network=False, system_disk=None,
-                   graphics=False, video=False):
+                   graphics=False, video=False, kernel_extra=''):
     prefix = log_prefix or ('iso' if iso else 'disk')
     log = ROOT / 'build/logs' / f'{prefix}-test-{pass_number}.log'
     log.parent.mkdir(parents=True, exist_ok=True)
@@ -877,7 +880,8 @@ def run_disk_guest(images, disk, guest_command, marker, pass_number, timeout, is
                                              else 'initramfs.cpio.gz')),
                     '-append', 'console=ttyS0,115200 rdinit=/init panic=-1 '
                                'neko.state=required' +
-                               (' neko.system=required' if system_disk else '')]
+                               (' neko.system=required' if system_disk else '') +
+                               (' ' + kernel_extra if kernel_extra else '')]
     with log.open('wb') as output:
         process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=output,
                                    stderr=subprocess.STDOUT)

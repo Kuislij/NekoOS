@@ -14,6 +14,11 @@
 | libxcb | 1.17.0 | `COPYING` в upstream tarball и `/usr/share/licenses/libxcb/COPYING` в образе; разрешительная лицензия в стиле MIT |
 | libX11 | 1.8.13 | `COPYING` в upstream tarball и `/usr/share/licenses/libx11/COPYING` в образе; несколько разрешительных уведомлений, метаданные пакета `NOASSERTION` |
 | libXext | 1.3.7 | `COPYING` в upstream tarball и `/usr/share/licenses/libxext/COPYING` в образе; несколько разрешительных уведомлений, метаданные пакета `NOASSERTION` |
+| libXrender | 0.9.12 | `COPYING` в upstream tarball и `/usr/share/licenses/libxrender/COPYING` в образе; метаданные пакета `NOASSERTION` |
+| libXfixes | 6.0.2 | `COPYING` в upstream tarball и `/usr/share/licenses/libxfixes/COPYING` в образе; метаданные пакета `NOASSERTION` |
+| libXrandr | 1.5.5 | `COPYING` в upstream tarball и `/usr/share/licenses/libxrandr/COPYING` в образе; метаданные пакета `NOASSERTION` |
+| evilwm | 1.5 | уведомления о перераспространении в upstream `README` и `/usr/share/licenses/evilwm/README`; исторические условия aewm и 9wm, метаданные `NOASSERTION` |
+| libffi | 3.5.2 | upstream `LICENSE` и `/usr/share/licenses/libffi/LICENSE` в образе; MIT |
 | zlib | 1.3.2 | `LICENSE` в upstream tarball и `/usr/share/licenses/zlib/LICENSE` в пакете; Zlib |
 | libxkbfile | 1.2.0 | `COPYING` в upstream tarball и `/usr/share/licenses/libxkbfile/COPYING` в пакете; несколько разрешительных уведомлений, метаданные `NOASSERTION` |
 | xkbcomp | 1.5.0 | `COPYING` в upstream tarball и `/usr/share/licenses/xkbcomp/COPYING` в пакете; несколько разрешительных уведомлений, метаданные `NOASSERTION` |
@@ -32,6 +37,7 @@
 | Meson (только на хосте) | 1.10.1 | `COPYING` в upstream tarball; Apache-2.0 |
 | xcb-proto (только на хосте) | 1.17.0 | `COPYING` в upstream tarball; разрешительная лицензия в стиле MIT |
 | pkgconf (только на хосте) | 2.5.1 | `COPYING` в upstream tarball; ISC |
+| bdftopcf (только на хосте) | 1.1.2 | `COPYING` в проверенном upstream tarball; разрешительные уведомления X.Org, инструмент не входит в образ |
 
 Версии Linux/BusyBox/musl/TinyCC и URL находятся в `configs/sources.sh`;
 Pixman, компоненты X11/Xorg и инструменты сборки закреплены в `recipes/`.

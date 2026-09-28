@@ -5,11 +5,16 @@ system_package_archives=(
     xorgproto-2025.1.nspkg
     xtrans-1.6.0.nspkg
     zlib-1.3.2.nspkg
+    libffi-3.5.2.nspkg
     libxau-1.0.12.nspkg
     libxdmcp-1.1.5.nspkg
     libxcb-1.17.0.nspkg
     libx11-1.8.13.nspkg
     libxext-1.3.7.nspkg
+    libxrender-0.9.12.nspkg
+    libxfixes-6.0.2.nspkg
+    libxrandr-1.5.5.nspkg
+    evilwm-1.5.nspkg
     libxkbfile-1.2.0.nspkg
     xkbcomp-1.5.0.nspkg
     xkeyboard-config-2.48.nspkg

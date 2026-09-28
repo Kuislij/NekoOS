@@ -100,6 +100,61 @@ grep -Fq 'libX11.so.6' <<< "$xorg_client_dynamic" ||
 if grep -Eq 'RPATH|RUNPATH|libc.so.6' <<< "$xorg_client_dynamic"; then
     die 'Xorg window client contains a host dependency or build path.'
 fi
+"$root/scripts/host-musl-gcc.sh" "$root/tests/x11_extensions_runtime.c" \
+    -I "$stage/usr/include" -L "$stage/usr/lib" \
+    -Wl,-rpath-link,"$stage/usr/lib" \
+    -lXrandr -lXfixes -lXrender -lXext -lX11 \
+    -o "$stage/usr/bin/neko-x11-extensions-check"
+x11_extensions_dynamic="$(readelf -d "$stage/usr/bin/neko-x11-extensions-check")"
+for library in libXrandr.so.2 libXfixes.so.3 libXrender.so.1; do
+    grep -Fq "Shared library: [$library]" <<< "$x11_extensions_dynamic" ||
+        die "X11 extension probe lacks $library."
+done
+if grep -Eq 'RPATH|RUNPATH|libc.so.6' <<< "$x11_extensions_dynamic"; then
+    die 'X11 extension probe contains a host dependency or build path.'
+fi
+readelf -l "$stage/usr/bin/neko-x11-extensions-check" |
+    grep -Fq '/lib/ld-musl-x86_64.so.1' ||
+    die 'X11 extension probe uses the wrong interpreter.'
+"$root/scripts/host-musl-gcc.sh" "$root/apps/x11-welcome.c" \
+    -I "$stage/usr/include" -L "$stage/usr/lib" \
+    -Wl,-rpath-link,"$stage/usr/lib" -lX11 \
+    -o "$stage/usr/bin/neko-x11-welcome"
+x11_welcome_dynamic="$(readelf -d "$stage/usr/bin/neko-x11-welcome")"
+grep -Fq 'Shared library: [libX11.so.6]' <<< "$x11_welcome_dynamic" ||
+    die 'X11 welcome window lacks Xlib.'
+if grep -Eq 'RPATH|RUNPATH|libc.so.6' <<< "$x11_welcome_dynamic"; then
+    die 'X11 welcome window contains a host dependency or build path.'
+fi
+readelf -l "$stage/usr/bin/neko-x11-welcome" |
+    grep -Fq '/lib/ld-musl-x86_64.so.1' ||
+    die 'X11 welcome window uses the wrong interpreter.'
+"$root/scripts/host-musl-gcc.sh" "$root/tests/libffi_runtime.c" \
+    -I "$stage/usr/include" -L "$stage/usr/lib" \
+    -Wl,-rpath-link,"$stage/usr/lib" -lffi \
+    -o "$stage/usr/bin/neko-libffi-check"
+libffi_dynamic="$(readelf -d "$stage/usr/bin/neko-libffi-check")"
+grep -Fq 'Shared library: [libffi.so.8]' <<< "$libffi_dynamic" ||
+    die 'libffi probe lacks the packaged library.'
+if grep -Eq 'RPATH|RUNPATH|libc.so.6' <<< "$libffi_dynamic"; then
+    die 'libffi probe contains a host dependency or build path.'
+fi
+readelf -l "$stage/usr/bin/neko-libffi-check" |
+    grep -Fq '/lib/ld-musl-x86_64.so.1' ||
+    die 'libffi probe uses the wrong interpreter.'
+"$root/scripts/host-musl-gcc.sh" "$root/tests/evilwm_runtime.c" \
+    -I "$stage/usr/include" -L "$stage/usr/lib" \
+    -Wl,-rpath-link,"$stage/usr/lib" -lX11 \
+    -o "$stage/usr/bin/neko-evilwm-check"
+evilwm_client_dynamic="$(readelf -d "$stage/usr/bin/neko-evilwm-check")"
+grep -Fq 'Shared library: [libX11.so.6]' <<< "$evilwm_client_dynamic" ||
+    die 'Window manager probe lacks Xlib.'
+if grep -Eq 'RPATH|RUNPATH|libc.so.6' <<< "$evilwm_client_dynamic"; then
+    die 'Window manager probe contains a host dependency or build path.'
+fi
+readelf -l "$stage/usr/bin/neko-evilwm-check" |
+    grep -Fq '/lib/ld-musl-x86_64.so.1' ||
+    die 'Window manager probe uses the wrong interpreter.'
 bash "$root/scripts/build-neko-desktop.sh" "$root/build/neko-desktop"
 install -m 755 "$root/build/neko-desktop" "$stage/usr/bin/neko-desktop"
 "$1" --list > "$root/build/busybox-applets.txt"
@@ -115,6 +170,7 @@ done
 install -m 755 "$root/rootfs/usr/bin/neko-help" "$stage/usr/bin/neko-help"
 install -m 755 "$root/rootfs/usr/bin/neko-shell" "$stage/usr/bin/neko-shell"
 install -m 755 "$root/rootfs/usr/bin/neko-session" "$stage/usr/bin/neko-session"
+install -m 755 "$root/rootfs/usr/bin/neko-x11-session" "$stage/usr/bin/neko-x11-session"
 install -m 755 "$root/rootfs/usr/bin/neko-boot-status" "$stage/usr/bin/neko-boot-status"
 install -m 755 "$root/rootfs/usr/bin/neko-net-status" "$stage/usr/bin/neko-net-status"
 install -m 755 "$root/rootfs/usr/bin/neko-service" "$stage/usr/bin/neko-service"

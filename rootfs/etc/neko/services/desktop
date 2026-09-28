@@ -2,6 +2,11 @@
 # neko-service: foreground
 # neko-service: requires-fbdev
 case "${1:-}" in
-    run) exec /usr/bin/neko-session ;;
+    run)
+        case " $(cat /proc/cmdline) " in
+            *' neko.x11=1 '*) exec /usr/bin/neko-x11-session --service ;;
+        esac
+        exec /usr/bin/neko-session
+        ;;
     *) exit 2 ;;
 esac
