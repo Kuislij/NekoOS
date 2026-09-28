@@ -15,7 +15,10 @@ About и Help. Это пока один графический процесс с
 отдельные графические приложения ещё предстоит добавить. Для перехода к
 Xorg и Xfce в образ уже входят Pixman, заголовки и транспорт X.Org,
 libXau, libXdmcp, libxcb, Xlib и libXext. Эти компоненты пока не создают
-рабочий стол: X-сервер, Xfce и Thunar ещё не установлены.
+рабочий стол. Теперь в образе есть минимальный Xorg и драйвер evdev:
+отдельная Xlib-программа уже создала окно в QEMU. Xfce и Thunar пока не
+установлены, а обычный запуск `--graphics` по-прежнему открывает прежнюю
+оконную оболочку.
 
 ## Быстрый старт
 
@@ -247,6 +250,25 @@ neko-pkg remove neko-theme
 [libxcb 1.17.0](recipes/libxcb/README.md),
 [libX11 1.8.13](recipes/libx11/README.md) и
 [libXext 1.3.7](recipes/libxext/README.md), собранные для musl NekoOS.
+Следующий слой уже собран отдельными системными пакетами и подключён к
+очереди сборки образа: [zlib 1.3.2](recipes/zlib/README.md),
+[libxkbfile 1.2.0](recipes/libxkbfile/README.md),
+[xkbcomp 1.5.0](recipes/xkbcomp/README.md),
+[xkeyboard-config 2.48](recipes/xkeyboard-config/README.md),
+[libfontenc 1.1.9](recipes/libfontenc/README.md),
+[libXfont2 2.0.9](recipes/libxfont2/README.md),
+[font-misc-misc 1.1.3](recipes/font-misc-misc/README.md),
+[libxcvt 0.1.3](recipes/libxcvt/README.md),
+[libpciaccess 0.19](recipes/libpciaccess/README.md),
+[libdrm 2.4.134](recipes/libdrm/README.md) и
+[libsha1 0.3](recipes/libsha1/README.md). Они дают обработку раскладок,
+битовые шрифты, режимы экрана, доступ к DRM/PCI и SHA-1 для Xorg.
+В образ также вошли [Xorg 21.1.24](recipes/xorg-server/README.md),
+[libevdev 1.13.7](recipes/libevdev/README.md),
+[mtdev 1.1.7](recipes/mtdev/README.md) и
+[xf86-input-evdev 2.11.0](recipes/xf86-input-evdev/README.md).
+Временная VM подтвердила запуск Xorg на virtio-GPU, загрузку драйверов
+клавиатуры и мыши и создание окна отдельной Xlib-программой.
 xtrans содержит исходные фрагменты транспорта для других компонентов и не
 является отдельной разделяемой библиотекой в госте. Xlib и libXext дают
 клиентским программам интерфейсы X11, но им нужен запущенный X-сервер.
@@ -255,15 +277,17 @@ xtrans содержит исходные фрагменты транспорта
 [xcb-proto](recipes/xcb-proto/README.md) и [pkgconf](recipes/pkgconf/README.md);
 в гостевую систему они не попадают. Проверки в QEMU запускают программы,
 связанные с Pixman, libXau/libXdmcp, libxcb, Xlib и libXext. Полная сборка
-прошла проверку initramfs из 4532 записей; прошли базовая, системная,
-графическая проверки (включая системный диск) и проверка обновления
-системного диска в QEMU.
-**X-сервер, Xfce и Thunar пока не установлены**: текущий экран с окнами
+прошла проверку initramfs из 5176 записей; базовая, системная, графическая
+проверки и тест обновления диска прошли в QEMU. Отдельная проверка запустила
+Xorg и Xlib-клиент в одноразовой VM.
+**Xfce и Thunar пока не установлены**: текущий экран с окнами
 Files/System остаётся однопроцессным прототипом. Последовательность перехода
 описана в
 [ADR-017](docs/adr/0017-system-packages-and-pixman.md) и
 [ADR-018](docs/adr/0018-x11-client-foundation.md); новый слой Xlib и
 ближайшая проверка Xorg — в [ADR-019](docs/adr/0019-xlib-xext-and-xorg-milestone.md).
+Сборка Xorg и его зависимости описаны в
+[ADR-020](docs/adr/0020-xorg-server-dependencies.md).
 
 ### Сеть
 
@@ -430,6 +454,7 @@ musl. Файлы `hello.c` и `hello` останутся в `/root` после `
 | `bash os test --system-update` | Проверить обновление, сохранение настроек и откат на временных дисках |
 | `bash os test --graphics` | Проверить экран, пользователя `neko` и графические устройства без окна |
 | `bash os test --graphics --system` | Проверить тот же графический путь с временным системным диском |
+| `python3 tools/xorg_smoke.py` | Проверить Xorg, драйверы ввода и окно отдельной Xlib-программы в одноразовой VM |
 | `bash os test --package` | Проверить установку, зависимости, обновление и удаление на отдельном тестовом диске |
 | `bash os test --no-build` | Тест уже собранных файлов с проверкой их SHA256 |
 
@@ -459,6 +484,7 @@ musl. Файлы `hello.c` и `hello` останутся в `/root` после `
 [Системные пакеты и первая графическая библиотека](docs/adr/0017-system-packages-and-pixman.md).
 [Клиентские библиотеки X11 для будущего рабочего стола](docs/adr/0018-x11-client-foundation.md).
 [Xlib, libXext и ближайший рубеж Xorg](docs/adr/0019-xlib-xext-and-xorg-milestone.md).
+[Минимальный Xorg и отдельный X11-клиент](docs/adr/0020-xorg-server-dependencies.md).
 
 [Результаты проверок этапов 1–2](docs/validation-2026-09-23.md).
 [Результаты проверки этапа 3](docs/validation-2026-09-25.md).
@@ -479,3 +505,4 @@ musl. Файлы `hello.c` и `hello` останутся в `/root` после `
 [Проверка системного пакета Pixman и обновления образа](docs/validation-system-packages-2026-09-27.md).
 [Проверка основы X11 и системного обновления](docs/validation-x11-foundation-2026-09-27.md).
 [Проверка Xlib, libXext и системного образа](docs/validation-xlib-foundation-2026-09-27.md).
+[Проверка Xorg, ввода и отдельного X11-окна](docs/validation-xorg-foundation-2026-09-28.md).

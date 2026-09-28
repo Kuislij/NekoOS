@@ -438,6 +438,9 @@ def boot(args):
                         b"neko-xcb-check && "
                         b"neko-xlib-check && "
                         b"neko-xext-check && "
+                        b"neko-xorg-stack-check && "
+                        b"Xorg -version > /tmp/xorg-version 2>&1 && "
+                        b"grep -Fq 'X.Org X Server 1.21.1.24' /tmp/xorg-version && "
                         b"uname -r && cat /etc/os-release && neko-help && "
                         b"neko-boot-status && "
                         b"printf '\\n%s%s\\n' 'SHELL_' 'READY' && poweroff || poweroff\n"
@@ -455,6 +458,7 @@ def boot(args):
                             and 'XCB_RUNTIME_READY' in lines
                             and 'XLIB_RUNTIME_READY' in lines
                             and 'XEXT_RUNTIME_READY' in lines
+                            and 'XORG_STACK_RUNTIME_READY' in lines
                             and 'Hello from NekoOS' in lines
                             and any('Power down' in line for line in lines)):
                         print(f'BOOT_TEST_PASSED: init, shell, filesystems, poweroff. Log: {log}')
@@ -802,6 +806,9 @@ def boot_system_update(args):
         "neko-xcb-check | grep -Fqx XCB_RUNTIME_READY && "
         "neko-xlib-check | grep -Fqx XLIB_RUNTIME_READY && "
         "neko-xext-check | grep -Fqx XEXT_RUNTIME_READY && "
+        "neko-xorg-stack-check | grep -Fqx XORG_STACK_RUNTIME_READY && "
+        "Xorg -version > /tmp/xorg-version 2>&1 && "
+        "grep -Fq 'X.Org X Server 1.21.1.24' /tmp/xorg-version && "
         "test -f /usr/share/nekoos/etc-baseline.sha256 && "
         "printf '\\n%s%s\\n' 'UPDATE_TEST_' 'APPLIED' && poweroff || poweroff\n"
     ).encode('ascii')
@@ -837,21 +844,21 @@ def boot_system_update(args):
 
 def run_disk_guest(images, disk, guest_command, marker, pass_number, timeout, iso,
                    log_prefix=None, network=False, system_disk=None,
-                   graphics=False):
+                   graphics=False, video=False):
     prefix = log_prefix or ('iso' if iso else 'disk')
     log = ROOT / 'build/logs' / f'{prefix}-test-{pass_number}.log'
     log.parent.mkdir(parents=True, exist_ok=True)
     monitor_path = graphics_monitor_path() if graphics else None
     command = [
         'qemu-system-x86_64', '-machine', 'q35', '-accel', 'tcg',
-        '-cpu', 'qemu64', '-m', ('512M' if graphics else '256M'), '-smp', '2', '-nodefaults',
+        '-cpu', 'qemu64', '-m', ('512M' if graphics or video else '256M'), '-smp', '2', '-nodefaults',
         '-display', 'none', '-monitor',
         graphics_monitor_option(monitor_path) if graphics else 'none',
         '-serial', 'stdio',
         '-nic', ('user,model=virtio-net-pci,ipv6=off' if network else 'none'),
         '-no-reboot',
     ]
-    if graphics:
+    if graphics or video:
         command += ['-device', 'virtio-vga', '-device', 'virtio-keyboard-pci',
                     '-device', 'virtio-mouse-pci']
     if system_disk is not None:

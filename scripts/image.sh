@@ -78,6 +78,28 @@ for probe in neko-x11-base-check neko-xcb-check neko-xlib-check neko-xext-check;
     readelf -l "$stage/usr/bin/$probe" |
         grep -Fq '/lib/ld-musl-x86_64.so.1' || die "$probe uses the wrong interpreter."
 done
+"$root/scripts/host-musl-gcc.sh" "$root/tests/xorg_stack_runtime.c" \
+    -I "$stage/usr/include" -L "$stage/usr/lib" \
+    -Wl,-rpath-link,"$stage/usr/lib" -lz -ldl \
+    -o "$stage/usr/bin/neko-xorg-stack-check"
+xorg_dynamic="$(readelf -d "$stage/usr/bin/neko-xorg-stack-check")"
+grep -Fq 'libz.so.1' <<< "$xorg_dynamic" || die 'Xorg stack probe lacks zlib.'
+if grep -Eq 'RPATH|RUNPATH|libc.so.6' <<< "$xorg_dynamic"; then
+    die 'Xorg stack probe contains a host dependency or build path.'
+fi
+readelf -l "$stage/usr/bin/neko-xorg-stack-check" |
+    grep -Fq '/lib/ld-musl-x86_64.so.1' ||
+    die 'Xorg stack probe uses the wrong interpreter.'
+"$root/scripts/host-musl-gcc.sh" "$root/tests/xorg_window_runtime.c" \
+    -I "$stage/usr/include" -L "$stage/usr/lib" \
+    -Wl,-rpath-link,"$stage/usr/lib" -lX11 \
+    -o "$stage/usr/bin/neko-xorg-window-check"
+xorg_client_dynamic="$(readelf -d "$stage/usr/bin/neko-xorg-window-check")"
+grep -Fq 'libX11.so.6' <<< "$xorg_client_dynamic" ||
+    die 'Xorg window client lacks Xlib.'
+if grep -Eq 'RPATH|RUNPATH|libc.so.6' <<< "$xorg_client_dynamic"; then
+    die 'Xorg window client contains a host dependency or build path.'
+fi
 bash "$root/scripts/build-neko-desktop.sh" "$root/build/neko-desktop"
 install -m 755 "$root/build/neko-desktop" "$stage/usr/bin/neko-desktop"
 "$1" --list > "$root/build/busybox-applets.txt"

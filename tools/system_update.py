@@ -121,6 +121,9 @@ def verify_guest_boot(images, candidate, timeout=120):
             b'neko-xcb-check >/dev/null && '
             b'neko-xlib-check >/dev/null && '
             b'neko-xext-check >/dev/null && '
+            b'neko-xorg-stack-check >/dev/null && '
+            b'Xorg -version >/tmp/xorg-version 2>&1 && '
+            b"grep -Fq 'X.Org X Server 1.21.1.24' /tmp/xorg-version && "
             b'test -f /etc/os-release && '
             b"printf '\\n%s%s\\n' 'SYSTEM_UPDATE_BOOT_' 'OK' && poweroff || poweroff\n",
             'SYSTEM_UPDATE_BOOT_OK', 1, timeout, False,

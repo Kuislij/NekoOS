@@ -4,9 +4,24 @@ system_package_archives=(
     pixman-0.46.4.nspkg
     xorgproto-2025.1.nspkg
     xtrans-1.6.0.nspkg
+    zlib-1.3.2.nspkg
     libxau-1.0.12.nspkg
     libxdmcp-1.1.5.nspkg
     libxcb-1.17.0.nspkg
     libx11-1.8.13.nspkg
     libxext-1.3.7.nspkg
+    libxkbfile-1.2.0.nspkg
+    xkbcomp-1.5.0.nspkg
+    xkeyboard-config-2.48.nspkg
+    libfontenc-1.1.9.nspkg
+    libxfont2-2.0.9.nspkg
+    font-misc-misc-1.1.3.nspkg
+    libxcvt-0.1.3.nspkg
+    libpciaccess-0.19.nspkg
+    libdrm-2.4.134.nspkg
+    libsha1-0.3.nspkg
+    xorg-server-21.1.24.nspkg
+    libevdev-1.13.7.nspkg
+    mtdev-1.1.7.nspkg
+    xf86-input-evdev-2.11.0.nspkg
 )
