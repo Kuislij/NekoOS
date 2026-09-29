@@ -16,8 +16,13 @@ while ! grep -Fq NEKO_X11_SESSION_RUNNING /run/neko/services/desktop.log 2>/dev/
     sleep 1
 done
 if grep -Fq NEKO_X11_SESSION_RUNNING /run/neko/services/desktop.log &&
+   grep -Fq NEKO_X11_SESSION_BUS_RUNNING /run/neko/services/desktop.log &&
    neko-service status desktop &&
    test -S /tmp/.X11-unix/X1 &&
+   bus_address=$(cat /run/neko-x11-session.*/dbus.address) &&
+   DBUS_SESSION_BUS_ADDRESS="$bus_address" setuidgid neko gdbus call --session \
+       --dest org.freedesktop.DBus --object-path /org/freedesktop/DBus \
+       --method org.freedesktop.DBus.ListNames | grep -Fq org.freedesktop.DBus &&
    DISPLAY=:1 neko-x11-extensions-check &&
    DISPLAY=:1 neko-evilwm-check &&
    neko-service stop desktop; then

@@ -142,6 +142,120 @@ fi
 readelf -l "$stage/usr/bin/neko-libffi-check" |
     grep -Fq '/lib/ld-musl-x86_64.so.1' ||
     die 'libffi probe uses the wrong interpreter.'
+"$root/scripts/host-musl-gcc.sh" "$root/recipes/libpng/smoke.c" \
+    -I "$stage/usr/include" -L "$stage/usr/lib" \
+    -Wl,-rpath-link,"$stage/usr/lib" -lpng16 -lz \
+    -o "$stage/usr/bin/neko-libpng-check"
+libpng_dynamic="$(readelf -d "$stage/usr/bin/neko-libpng-check")"
+grep -Fq 'Shared library: [libpng16.so.16]' <<< "$libpng_dynamic" ||
+    die 'libpng probe lacks the packaged library.'
+if grep -Eq 'RPATH|RUNPATH|libc.so.6' <<< "$libpng_dynamic"; then
+    die 'libpng probe contains a host dependency or build path.'
+fi
+readelf -l "$stage/usr/bin/neko-libpng-check" |
+    grep -Fq '/lib/ld-musl-x86_64.so.1' ||
+    die 'libpng probe uses the wrong interpreter.'
+"$root/scripts/host-musl-gcc.sh" "$root/tests/expat_runtime.c" \
+    -I "$stage/usr/include" -L "$stage/usr/lib" -lexpat \
+    -o "$stage/usr/bin/neko-expat-check"
+expat_dynamic="$(readelf -d "$stage/usr/bin/neko-expat-check")"
+grep -Fq 'Shared library: [libexpat.so.1]' <<< "$expat_dynamic" ||
+    die 'Expat probe lacks the packaged library.'
+if grep -Eq 'RPATH|RUNPATH|libc.so.6' <<< "$expat_dynamic"; then
+    die 'Expat probe contains a host dependency or build path.'
+fi
+readelf -l "$stage/usr/bin/neko-expat-check" |
+    grep -Fq '/lib/ld-musl-x86_64.so.1' ||
+    die 'Expat probe uses the wrong interpreter.'
+"$root/scripts/host-musl-gcc.sh" "$root/tests/freetype_runtime.c" \
+    -I "$stage/usr/include/freetype2" -L "$stage/usr/lib" \
+    -Wl,-rpath-link,"$stage/usr/lib" -lfreetype \
+    -o "$stage/usr/bin/neko-freetype-check"
+freetype_dynamic="$(readelf -d "$stage/usr/bin/neko-freetype-check")"
+grep -Fq 'Shared library: [libfreetype.so.6]' <<< "$freetype_dynamic" ||
+    die 'FreeType probe lacks the packaged library.'
+if grep -Eq 'RPATH|RUNPATH|libc.so.6' <<< "$freetype_dynamic"; then
+    die 'FreeType probe contains a host dependency or build path.'
+fi
+readelf -l "$stage/usr/bin/neko-freetype-check" |
+    grep -Fq '/lib/ld-musl-x86_64.so.1' ||
+    die 'FreeType probe uses the wrong interpreter.'
+"$root/scripts/host-musl-gcc.sh" "$root/tests/fontconfig_runtime.c" \
+    -I "$stage/usr/include" -I "$stage/usr/include/freetype2" \
+    -L "$stage/usr/lib" -Wl,-rpath-link,"$stage/usr/lib" \
+    -lfontconfig -o "$stage/usr/bin/neko-fontconfig-check"
+fontconfig_dynamic="$(readelf -d "$stage/usr/bin/neko-fontconfig-check")"
+grep -Fq 'Shared library: [libfontconfig.so.1]' <<< "$fontconfig_dynamic" ||
+    die 'Fontconfig probe lacks the packaged library.'
+if grep -Eq 'RPATH|RUNPATH|libc.so.6' <<< "$fontconfig_dynamic"; then
+    die 'Fontconfig probe contains a host dependency or build path.'
+fi
+readelf -l "$stage/usr/bin/neko-fontconfig-check" |
+    grep -Fq '/lib/ld-musl-x86_64.so.1' ||
+    die 'Fontconfig probe uses the wrong interpreter.'
+"$root/scripts/host-musl-gcc.sh" "$root/tests/pcre2_runtime.c" \
+    -I "$stage/usr/include" -L "$stage/usr/lib" -lpcre2-8 \
+    -o "$stage/usr/bin/neko-pcre2-check"
+pcre2_dynamic="$(readelf -d "$stage/usr/bin/neko-pcre2-check")"
+grep -Fq 'Shared library: [libpcre2-8.so.0]' <<< "$pcre2_dynamic" ||
+    die 'PCRE2 probe lacks the packaged library.'
+if grep -Eq 'RPATH|RUNPATH|libc.so.6' <<< "$pcre2_dynamic"; then
+    die 'PCRE2 probe contains a host dependency or build path.'
+fi
+readelf -l "$stage/usr/bin/neko-pcre2-check" |
+    grep -Fq '/lib/ld-musl-x86_64.so.1' ||
+    die 'PCRE2 probe uses the wrong interpreter.'
+"$root/scripts/host-musl-gcc.sh" "$root/tests/glib_runtime.c" \
+    -I "$stage/usr/include/glib-2.0" \
+    -I "$stage/usr/lib/glib-2.0/include" \
+    -L "$stage/usr/lib" -Wl,-rpath-link,"$stage/usr/lib" \
+    -lgio-2.0 -lgobject-2.0 -lglib-2.0 \
+    -o "$stage/usr/bin/neko-glib-check"
+glib_dynamic="$(readelf -d "$stage/usr/bin/neko-glib-check")"
+for library in libgio-2.0.so.0 libgobject-2.0.so.0 libglib-2.0.so.0; do
+    grep -Fq "Shared library: [$library]" <<< "$glib_dynamic" ||
+        die "GLib probe lacks $library."
+done
+if grep -Eq 'RPATH|RUNPATH|libc.so.6' <<< "$glib_dynamic"; then
+    die 'GLib probe contains a host dependency or build path.'
+fi
+readelf -l "$stage/usr/bin/neko-glib-check" |
+    grep -Fq '/lib/ld-musl-x86_64.so.1' ||
+    die 'GLib probe uses the wrong interpreter.'
+"$root/scripts/host-musl-gcc.sh" "$root/recipes/cairo/smoke.c" \
+    -I "$stage/usr/include/cairo" \
+    -I "$stage/usr/include/glib-2.0" \
+    -I "$stage/usr/lib/glib-2.0/include" \
+    -L "$stage/usr/lib" -Wl,-rpath-link,"$stage/usr/lib" \
+    -lcairo-gobject -lcairo -lgobject-2.0 -lglib-2.0 \
+    -o "$stage/usr/bin/neko-cairo-check"
+cairo_dynamic="$(readelf -d "$stage/usr/bin/neko-cairo-check")"
+for library in libcairo.so.2 libcairo-gobject.so.2; do
+    grep -Fq "Shared library: [$library]" <<< "$cairo_dynamic" ||
+        die "Cairo probe lacks $library."
+done
+if grep -Eq 'RPATH|RUNPATH|libc.so.6' <<< "$cairo_dynamic"; then
+    die 'Cairo probe contains a host dependency or build path.'
+fi
+readelf -l "$stage/usr/bin/neko-cairo-check" |
+    grep -Fq '/lib/ld-musl-x86_64.so.1' ||
+    die 'Cairo probe uses the wrong interpreter.'
+"$root/scripts/host-musl-gcc.sh" "$root/tests/libxfce4util_runtime.c" \
+    -I "$stage/usr/include/xfce4" \
+    -I "$stage/usr/include/glib-2.0" \
+    -I "$stage/usr/lib/glib-2.0/include" \
+    -L "$stage/usr/lib" -Wl,-rpath-link,"$stage/usr/lib" \
+    -lxfce4util -lglib-2.0 \
+    -o "$stage/usr/bin/neko-libxfce4util-check"
+xfce_util_dynamic="$(readelf -d "$stage/usr/bin/neko-libxfce4util-check")"
+grep -Fq 'Shared library: [libxfce4util.so.7]' <<< "$xfce_util_dynamic" ||
+    die 'Xfce utility probe lacks the packaged library.'
+if grep -Eq 'RPATH|RUNPATH|libc.so.6' <<< "$xfce_util_dynamic"; then
+    die 'Xfce utility probe contains a host dependency or build path.'
+fi
+readelf -l "$stage/usr/bin/neko-libxfce4util-check" |
+    grep -Fq '/lib/ld-musl-x86_64.so.1' ||
+    die 'Xfce utility probe uses the wrong interpreter.'
 "$root/scripts/host-musl-gcc.sh" "$root/tests/evilwm_runtime.c" \
     -I "$stage/usr/include" -L "$stage/usr/lib" \
     -Wl,-rpath-link,"$stage/usr/lib" -lX11 \

@@ -17,7 +17,7 @@ if [ "$(id -u)" != 0 ]; then
     exit 1
 fi
 for program in Xorg evilwm neko-x11-welcome neko-evilwm-check \
-               neko-x11-extensions-check setuidgid; do
+               neko-x11-extensions-check setuidgid dbus-daemon gdbus; do
     [ -x "/usr/bin/$program" ] || {
         echo "neko-x11-session: missing /usr/bin/$program" >&2
         exit 1
@@ -58,6 +58,7 @@ mkdir "$run_dir"
 xorg_pid=
 wm_pid=
 client_pid=
+bus_pid=
 restart_desktop=0
 cleanup() {
     status=$?
@@ -70,6 +71,10 @@ cleanup() {
         kill "$wm_pid" 2>/dev/null || true
         wait "$wm_pid" 2>/dev/null || true
     }
+    [ -z "$bus_pid" ] || {
+        kill "$bus_pid" 2>/dev/null || true
+        wait "$bus_pid" 2>/dev/null || true
+    }
     [ -z "$xorg_pid" ] || {
         kill "$xorg_pid" 2>/dev/null || true
         wait "$xorg_pid" 2>/dev/null || true
@@ -78,9 +83,11 @@ cleanup() {
         [ ! -f "$run_dir/Xorg.log" ] || tail -n 60 "$run_dir/Xorg.log" >&2 || true
         [ ! -f "$run_dir/evilwm.log" ] || cat "$run_dir/evilwm.log" >&2 || true
         [ ! -f "$run_dir/welcome.log" ] || cat "$run_dir/welcome.log" >&2 || true
+        [ ! -f "$run_dir/dbus.log" ] || cat "$run_dir/dbus.log" >&2 || true
     fi
     rm -f "$run_dir/xorg.conf" "$run_dir/Xorg.log" \
-        "$run_dir/Xorg.stdout" "$run_dir/evilwm.log" "$run_dir/welcome.log"
+        "$run_dir/Xorg.stdout" "$run_dir/evilwm.log" "$run_dir/welcome.log" \
+        "$run_dir/dbus.address" "$run_dir/dbus.log"
     rmdir "$run_dir" 2>/dev/null || true
     if [ "$restart_desktop" = 1 ]; then
         neko-service start desktop || true
@@ -150,9 +157,32 @@ if [ "$ready" != 1 ]; then
     exit 1
 fi
 
-unset CDPATH ENV BASH_ENV LD_PRELOAD LD_LIBRARY_PATH LD_AUDIT
+unset CDPATH ENV BASH_ENV LD_PRELOAD LD_LIBRARY_PATH LD_AUDIT \
+    DBUS_SESSION_BUS_ADDRESS DBUS_SYSTEM_BUS_ADDRESS XDG_RUNTIME_DIR
 export PATH=/usr/bin:/bin HOME=/home/neko USER=neko LOGNAME=neko SHELL=/bin/sh DISPLAY=:1
 cd /home/neko
+/usr/bin/setuidgid neko /usr/bin/dbus-daemon --session --nofork \
+    --print-address=1 > "$run_dir/dbus.address" 2> "$run_dir/dbus.log" &
+bus_pid=$!
+bus_ready=0
+for attempt in 1 2 3 4 5 6 7 8 9 10; do
+    if [ -s "$run_dir/dbus.address" ]; then
+        bus_ready=1
+        break
+    fi
+    kill -0 "$bus_pid" 2>/dev/null || break
+    sleep 1
+done
+if [ "$bus_ready" != 1 ] || ! kill -0 "$bus_pid" 2>/dev/null; then
+    echo 'neko-x11-session: D-Bus session did not start' >&2
+    cat "$run_dir/dbus.log" >&2 || true
+    exit 1
+fi
+DBUS_SESSION_BUS_ADDRESS=$(head -n 1 "$run_dir/dbus.address")
+case "$DBUS_SESSION_BUS_ADDRESS" in
+    unix:*) export DBUS_SESSION_BUS_ADDRESS ;;
+    *) echo 'neko-x11-session: invalid D-Bus session address' >&2; exit 1 ;;
+esac
 /usr/bin/setuidgid neko /usr/bin/evilwm \
     --fg '#75aaff' --bg '#273751' --fc '#7bd7bd' --bw 3 --fn fixed \
     --term /usr/bin/neko-x11-welcome > "$run_dir/evilwm.log" 2>&1 &
@@ -166,6 +196,10 @@ if ! kill -0 "$wm_pid" 2>/dev/null; then
 fi
 
 if [ "${1:-}" = --self-test ]; then
+    /usr/bin/setuidgid neko /usr/bin/gdbus call --session \
+        --dest org.freedesktop.DBus --object-path /org/freedesktop/DBus \
+        --method org.freedesktop.DBus.ListNames | grep -Fq org.freedesktop.DBus
+    echo NEKO_X11_SESSION_BUS_READY
     /usr/bin/setuidgid neko /usr/bin/neko-x11-extensions-check
     /usr/bin/setuidgid neko /usr/bin/neko-evilwm-check
     echo NEKO_X11_SESSION_READY
@@ -173,6 +207,7 @@ if [ "${1:-}" = --self-test ]; then
 fi
 
 echo 'NekoOS X11 session is running. Close the welcome window to return.'
+echo NEKO_X11_SESSION_BUS_RUNNING
 /usr/bin/setuidgid neko /usr/bin/neko-x11-welcome \
     > "$run_dir/welcome.log" 2>&1 &
 client_pid=$!
@@ -181,5 +216,6 @@ wait "$client_pid"
 client_pid=
 if [ "${1:-}" = --service ]; then
     cleanup
+    unset DISPLAY DBUS_SESSION_BUS_ADDRESS
     exec /usr/bin/neko-session
 fi

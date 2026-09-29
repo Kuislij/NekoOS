@@ -5,7 +5,16 @@ system_package_archives=(
     xorgproto-2025.1.nspkg
     xtrans-1.6.0.nspkg
     zlib-1.3.2.nspkg
+    libpng-1.6.58.nspkg
     libffi-3.5.2.nspkg
+    expat-2.8.5.nspkg
+    freetype-2.14.3.nspkg
+    fontconfig-2.17.1.nspkg
+    dejavu-fonts-2.37.nspkg
+    dbus-1.16.2.nspkg
+    pcre2-10.48.nspkg
+    glib-2.84.4.nspkg
+    libxfce4util-4.20.1.nspkg
     libxau-1.0.12.nspkg
     libxdmcp-1.1.5.nspkg
     libxcb-1.17.0.nspkg
@@ -14,6 +23,7 @@ system_package_archives=(
     libxrender-0.9.12.nspkg
     libxfixes-6.0.2.nspkg
     libxrandr-1.5.5.nspkg
+    cairo-1.18.6.nspkg
     evilwm-1.5.nspkg
     libxkbfile-1.2.0.nspkg
     xkbcomp-1.5.0.nspkg

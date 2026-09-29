@@ -12,13 +12,15 @@ BusyBox и TinyCC собраны с musl; программы, созданные
 Виртуальная сеть доступна по флагу `--net`. С флагом `--graphics` в QEMU
 запускается первая оконная оболочка: рабочий стол, панель, окна Files, System,
 About и Help. Это пока один графический процесс с прямым выводом в framebuffer;
-в этом режиме отдельные графические приложения ещё предстоит добавить. Для перехода к
-Xorg и Xfce в образ уже входят Pixman, заголовки и транспорт X.Org,
-libXau, libXdmcp, libxcb, Xlib и libXext. Эти компоненты пока не создают
-рабочий стол. В образе есть Xorg и драйвер evdev; отдельные Xlib-программы
-уже создают окна в QEMU. Добавлен первый настоящий оконный менеджер evilwm и
-отдельный X11-сеанс по флагу `--x11`. Xfce и Thunar пока не установлены, а
-обычный запуск `--graphics` по-прежнему открывает прежнюю оконную оболочку.
+в этом режиме отдельные графические приложения ещё предстоит добавить. Для
+перехода к полноценному рабочему столу в образ уже входят Xorg, библиотеки
+X11, GLib/GObject/GIO, Cairo,
+libxfce4util, движок шрифтов FreeType, Fontconfig, масштабируемые шрифты
+DejaVu и пользовательская шина D-Bus. Это зависимости будущего рабочего
+стола, а не сам рабочий стол. В QEMU отдельные Xlib-программы создают окна;
+первый оконный менеджер evilwm работает в X11-сеансе по флагу `--x11`.
+**GTK 3, компоненты рабочего стола Xfce и Thunar пока не установлены.**
+Обычный запуск `--graphics` по-прежнему открывает прежнюю оконную оболочку.
 
 ## Быстрый старт
 
@@ -272,10 +274,22 @@ neko-pkg remove neko-theme
 [mtdev 1.1.7](recipes/mtdev/README.md) и
 [xf86-input-evdev 2.11.0](recipes/xf86-input-evdev/README.md).
 Первый независимый оконный менеджер — [evilwm 1.5](recipes/evilwm/README.md).
-[libffi 3.5.2](recipes/libffi/README.md) подготовлена для будущего стека
-GLib/GObject. В одноразовой VM проверяются запуск Xorg на virtio-GPU,
-доставка событий клавиатуры и мыши до Xlib-клиента и управление отдельным
-окном через evilwm.
+[libffi 3.5.2](recipes/libffi/README.md) и
+[PCRE2 10.48](recipes/pcre2/README.md) поддерживают уже собранные
+[GLib/GObject/GIO 2.84.4](recipes/glib/README.md) и первую библиотеку
+[Xfce — libxfce4util 4.20.1](recipes/libxfce4util/README.md).
+Для изображений и шрифтов добавлены
+[libpng 1.6.58](recipes/libpng/README.md),
+[Expat 2.8.5](recipes/expat/README.md),
+[FreeType 2.14.3](recipes/freetype/README.md),
+[Fontconfig 2.17.1](recipes/fontconfig/README.md) и
+[DejaVu 2.37](recipes/dejavu-fonts/README.md). Для векторной отрисовки
+добавлен [Cairo 1.18.6](recipes/cairo/README.md) с PNG- и X11-бэкендами.
+[D-Bus 1.16.2](recipes/dbus/README.md) даёт пользовательскую шину:
+`neko-x11-session` запускает её от `neko` вместе с Xorg и останавливает при
+выходе из сеанса. В одноразовой VM проверяются запуск Xorg на virtio-GPU,
+доставка событий клавиатуры и мыши до Xlib-клиента, управление отдельным
+окном через evilwm, поиск шрифта, работа новых библиотек и вызов через D-Bus.
 xtrans содержит исходные фрагменты транспорта для других компонентов и не
 является отдельной разделяемой библиотекой в госте. Xlib и libXext дают
 клиентским программам интерфейсы X11, но им нужен запущенный X-сервер.
@@ -283,10 +297,10 @@ xtrans содержит исходные фрагменты транспорта
 На сборочной машине используются закреплённые
 [xcb-proto](recipes/xcb-proto/README.md) и [pkgconf](recipes/pkgconf/README.md);
 в гостевую систему они не попадают. Проверки в QEMU запускают программы,
-связанные с Pixman, libXau/libXdmcp, libxcb, Xlib и libXext. Сборка,
-загрузка и графические проверки запускаются в QEMU; состав и размер текущего
-образа фиксируются в документах проверки соответствующего этапа.
-**Xfce и Thunar пока не установлены**: текущий экран с окнами
+связанные с Pixman, libXau/libXdmcp, libxcb, Xlib, libXext и новым
+библиотечным слоем. В очередь сборки образа входят 38 системных пакетов
+`NSPKG/1`; initramfs содержит 5999 записей. **GTK 3, Xfce и Thunar пока не
+установлены**: текущий экран с окнами
 Files/System остаётся однопроцессным прототипом. Последовательность перехода
 описана в
 [ADR-017](docs/adr/0017-system-packages-and-pixman.md) и
@@ -296,6 +310,8 @@ Files/System остаётся однопроцессным прототипом.
 [ADR-020](docs/adr/0020-xorg-server-dependencies.md).
 Оконный менеджер и запуск временного X11-сеанса описаны в
 [ADR-021](docs/adr/0021-window-managed-x11-session.md).
+Новые библиотеки, пользовательская шина и следующий порядок сборки описаны
+в [ADR-022](docs/adr/0022-gtk-xfce-foundation.md).
 
 ### Сеть
 
@@ -409,7 +425,8 @@ QEMU уже способен показать такой экран; нынеш�
 Из уже работающей гостевой консоли в режиме `--graphics` тот же сеанс можно
 запустить командой
 `neko-x11-session`. Это промежуточная демонстрация управления окнами; Xfce и
-Thunar пока отсутствуют. Автоматические проверки:
+Thunar пока отсутствуют. Во время этого сеанса работает отдельная
+пользовательская шина D-Bus для будущих программ Xfce. Автоматические проверки:
 `python3 tools/evilwm_smoke.py` и `python3 tools/x11_autostart_smoke.py`
 в Linux-копии проекта.
 
@@ -514,6 +531,7 @@ musl. Файлы `hello.c` и `hello` останутся в `/root` после `
 [Xlib, libXext и ближайший рубеж Xorg](docs/adr/0019-xlib-xext-and-xorg-milestone.md).
 [Минимальный Xorg и отдельный X11-клиент](docs/adr/0020-xorg-server-dependencies.md).
 [Первый оконный менеджер и X11-сеанс](docs/adr/0021-window-managed-x11-session.md).
+[Библиотечная основа GTK/Xfce и пользовательская шина D-Bus](docs/adr/0022-gtk-xfce-foundation.md).
 
 [Результаты проверок этапов 1–2](docs/validation-2026-09-23.md).
 [Результаты проверки этапа 3](docs/validation-2026-09-25.md).
@@ -537,3 +555,4 @@ musl. Файлы `hello.c` и `hello` останутся в `/root` после `
 [Проверка Xorg, ввода и отдельного X11-окна](docs/validation-xorg-foundation-2026-09-28.md).
 [Проверка оконного X11-сеанса](docs/validation-window-managed-x11-2026-09-28.md).
 [Проверка управления указателем QEMU](docs/validation-absolute-pointer-2026-09-28.md).
+[Проверка шрифтов, библиотек и D-Bus для Xfce](docs/validation-desktop-dependencies-2026-09-29.md).

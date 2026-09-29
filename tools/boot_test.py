@@ -510,6 +510,20 @@ def boot(args):
                         b"neko-xext-check && "
                         b"neko-xorg-stack-check && "
                         b"neko-libffi-check && "
+                        b"neko-libpng-check && "
+                        b"neko-expat-check && "
+                        b"neko-freetype-check && "
+                        b"neko-fontconfig-check && "
+                        b"neko-pcre2-check && "
+                        b"neko-glib-check && "
+                        b"neko-cairo-check /tmp/neko-cairo.png && "
+                        b"neko-libxfce4util-check && "
+                        b"dbus-run-session -- gdbus call --session "
+                        b"--dest org.freedesktop.DBus "
+                        b"--object-path /org/freedesktop/DBus "
+                        b"--method org.freedesktop.DBus.ListNames "
+                        b"| grep -Fq org.freedesktop.DBus && "
+                        b"printf '%s\n' DBUS_SESSION_READY && "
                         b"Xorg -version > /tmp/xorg-version 2>&1 && "
                         b"grep -Fq 'X.Org X Server 1.21.1.24' /tmp/xorg-version && "
                         b"uname -r && cat /etc/os-release && neko-help && "
@@ -531,6 +545,15 @@ def boot(args):
                             and 'XEXT_RUNTIME_READY' in lines
                             and 'XORG_STACK_RUNTIME_READY' in lines
                             and 'LIBFFI_RUNTIME_READY' in lines
+                            and 'LIBPNG_RUNTIME_READY' in lines
+                            and 'EXPAT_RUNTIME_READY' in lines
+                            and 'FREETYPE_RUNTIME_READY' in lines
+                            and 'FONTCONFIG_RUNTIME_READY' in lines
+                            and 'PCRE2_RUNTIME_READY' in lines
+                            and 'GLIB_RUNTIME_READY' in lines
+                            and 'CAIRO_SMOKE_OK' in lines
+                            and 'LIBXFCE4UTIL_RUNTIME_READY' in lines
+                            and 'DBUS_SESSION_READY' in lines
                             and 'Hello from NekoOS' in lines
                             and any('Power down' in line for line in lines)):
                         print(f'BOOT_TEST_PASSED: init, shell, filesystems, poweroff. Log: {log}')
@@ -880,6 +903,19 @@ def boot_system_update(args):
         "neko-xext-check | grep -Fqx XEXT_RUNTIME_READY && "
         "neko-xorg-stack-check | grep -Fqx XORG_STACK_RUNTIME_READY && "
         "neko-libffi-check | grep -Fqx LIBFFI_RUNTIME_READY && "
+        "neko-libpng-check | grep -Fqx LIBPNG_RUNTIME_READY && "
+        "neko-expat-check | grep -Fqx EXPAT_RUNTIME_READY && "
+        "neko-freetype-check | grep -Fqx FREETYPE_RUNTIME_READY && "
+        "neko-fontconfig-check | grep -Fqx FONTCONFIG_RUNTIME_READY && "
+        "neko-pcre2-check | grep -Fqx PCRE2_RUNTIME_READY && "
+        "neko-glib-check | grep -Fqx GLIB_RUNTIME_READY && "
+        "neko-cairo-check /tmp/neko-cairo.png | grep -Fqx CAIRO_SMOKE_OK && "
+        "neko-libxfce4util-check | grep -Fqx LIBXFCE4UTIL_RUNTIME_READY && "
+        "dbus-run-session -- gdbus call --session "
+        "--dest org.freedesktop.DBus "
+        "--object-path /org/freedesktop/DBus "
+        "--method org.freedesktop.DBus.ListNames "
+        "| grep -Fq org.freedesktop.DBus && "
         "Xorg -version > /tmp/xorg-version 2>&1 && "
         "grep -Fq 'X.Org X Server 1.21.1.24' /tmp/xorg-version && "
         "test -f /usr/share/nekoos/etc-baseline.sha256 && "

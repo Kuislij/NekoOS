@@ -20,6 +20,16 @@
 | evilwm | 1.5 | уведомления о перераспространении в upstream `README` и `/usr/share/licenses/evilwm/README`; исторические условия aewm и 9wm, метаданные `NOASSERTION` |
 | libffi | 3.5.2 | upstream `LICENSE` и `/usr/share/licenses/libffi/LICENSE` в образе; MIT |
 | zlib | 1.3.2 | `LICENSE` в upstream tarball и `/usr/share/licenses/zlib/LICENSE` в пакете; Zlib |
+| libpng | 1.6.58 | upstream `LICENSE` и `/usr/share/licenses/libpng/LICENSE` в образе; libpng-2.0 |
+| Expat | 2.8.5 | upstream `COPYING` и `/usr/share/licenses/expat/COPYING` в образе; MIT |
+| PCRE2 | 10.48 | upstream `LICENCE.md` и отдельная лицензия JIT-компилятора в `/usr/share/licenses/pcre2/`; BSD-3-Clause с исключением PCRE2 и дополнительным уведомлением |
+| GLib/GObject/GIO | 2.84.4 | upstream `COPYING` и `LICENSES/` сохранены в `/usr/share/licenses/glib/`; несколько условий для библиотек и утилит, метаданные `NOASSERTION` |
+| libxfce4util | 4.20.1 | upstream `COPYING` в `/usr/share/licenses/libxfce4util/COPYING`; библиотечный LGPL и GPL-код утилит, метаданные `NOASSERTION` |
+| FreeType | 2.14.3 | upstream `LICENSE.TXT`, `FTL.TXT` и `GPLv2.TXT` сохранены в `/usr/share/licenses/freetype/`; выбор между FreeType License и GPLv2 или новее, метаданные `NOASSERTION` |
+| Fontconfig | 2.17.1 | upstream `COPYING` в `/usr/share/licenses/fontconfig/COPYING`; несколько разрешительных уведомлений, метаданные `NOASSERTION` |
+| DejaVu fonts | 2.37 | upstream `LICENSE` в `/usr/share/licenses/dejavu-fonts/LICENSE`; полные условия для шрифтов в этом файле, метаданные `NOASSERTION` |
+| D-Bus | 1.16.2 | upstream `COPYING` и `LICENSES/` в `/usr/share/licenses/dbus/`; метаданные пакета `GPL-2.0-or-later`, при перераспространении учитывать также сохранённые AFL/MIT-уведомления |
+| Cairo | 1.18.6 | upstream `COPYING`, `COPYING-LGPL-2.1` и `COPYING-MPL-1.1` сохранены в `/usr/share/licenses/cairo/`; альтернативные условия для библиотеки, метаданные `NOASSERTION` |
 | libxkbfile | 1.2.0 | `COPYING` в upstream tarball и `/usr/share/licenses/libxkbfile/COPYING` в пакете; несколько разрешительных уведомлений, метаданные `NOASSERTION` |
 | xkbcomp | 1.5.0 | `COPYING` в upstream tarball и `/usr/share/licenses/xkbcomp/COPYING` в пакете; несколько разрешительных уведомлений, метаданные `NOASSERTION` |
 | xkeyboard-config | 2.48 | `COPYING` в upstream tarball и `/usr/share/licenses/xkeyboard-config/COPYING` в пакете; несколько разрешительных уведомлений, метаданные `NOASSERTION` |
@@ -38,9 +48,11 @@
 | xcb-proto (только на хосте) | 1.17.0 | `COPYING` в upstream tarball; разрешительная лицензия в стиле MIT |
 | pkgconf (только на хосте) | 2.5.1 | `COPYING` в upstream tarball; ISC |
 | bdftopcf (только на хосте) | 1.1.2 | `COPYING` в проверенном upstream tarball; разрешительные уведомления X.Org, инструмент не входит в образ |
+| gperf (только на хосте) | 3.3 | `COPYING` в upstream tarball; сборочный инструмент Fontconfig, не входит в образ |
 
 Версии Linux/BusyBox/musl/TinyCC и URL находятся в `configs/sources.sh`;
-Pixman, компоненты X11/Xorg и инструменты сборки закреплены в `recipes/`.
+Pixman, компоненты X11/Xorg, шрифтовой и GTK/Xfce-зависимый слой, а также
+инструменты сборки закреплены в `recipes/`.
 Извлечённые исходники доступны в `build/sources/`. Host GCC/Make/QEMU не
 входят в образ; TinyCC входит. Linux UAPI headers создаются из закреплённого
 исходного дерева Linux и имеют условия из его `LICENSES/`.
