@@ -83,7 +83,7 @@ def make_candidate(source):
 def run_maintenance(images, candidate, log, timeout=120):
     command = [
         'qemu-system-x86_64', '-machine', 'q35', '-accel', 'tcg', '-cpu', 'qemu64',
-        '-m', '256M', '-smp', '2', '-nodefaults', '-display', 'none',
+        '-m', '512M', '-smp', '2', '-nodefaults', '-display', 'none',
         '-monitor', 'none', '-serial', 'stdio', '-nic', 'none', '-no-reboot',
         '-drive', f'file={candidate},format=raw,if=virtio',
         '-kernel', str(images / 'bzImage'),
@@ -128,6 +128,12 @@ def verify_guest_boot(images, candidate, timeout=120):
             b'neko-glib-check >/dev/null && '
             b'neko-cairo-check /tmp/neko-cairo-update.png >/dev/null && '
             b'neko-libxfce4util-check >/dev/null && '
+            b'neko-fribidi-check >/dev/null && '
+            b'neko-harfbuzz-check >/dev/null && '
+            b'neko-pango-check /tmp/neko-pango-update.png >/dev/null && '
+            b'neko-gdk-pixbuf-check /tmp/neko-pixbuf-update.png >/dev/null && '
+            b'neko-atspi-check >/dev/null && '
+            b'gtk-query-immodules-3.0 >/tmp/neko-gtk-immodules && '
             b'dbus-run-session -- gdbus call --session '
             b'--dest org.freedesktop.DBus '
             b'--object-path /org/freedesktop/DBus '

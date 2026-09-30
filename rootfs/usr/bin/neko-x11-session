@@ -16,7 +16,7 @@ if [ "$(id -u)" != 0 ]; then
     echo 'neko-x11-session: start from the root console' >&2
     exit 1
 fi
-for program in Xorg evilwm neko-x11-welcome neko-evilwm-check \
+for program in Xorg evilwm neko-gtk-welcome neko-evilwm-check \
                neko-x11-extensions-check setuidgid dbus-daemon gdbus; do
     [ -x "/usr/bin/$program" ] || {
         echo "neko-x11-session: missing /usr/bin/$program" >&2
@@ -130,6 +130,9 @@ Section "InputDevice"
     Driver "evdev"
     Option "Device" "$pointer"
     Option "CorePointer"
+    # The QEMU tablet exposes touch/pressure bits, so evdev defaults to
+    # relative touchpad motion unless its absolute mode is explicit.
+    Option "Mode" "Absolute"
 EndSection
 Section "ServerLayout"
     Identifier "Layout0"
@@ -159,7 +162,7 @@ fi
 
 unset CDPATH ENV BASH_ENV LD_PRELOAD LD_LIBRARY_PATH LD_AUDIT \
     DBUS_SESSION_BUS_ADDRESS DBUS_SYSTEM_BUS_ADDRESS XDG_RUNTIME_DIR
-export PATH=/usr/bin:/bin HOME=/home/neko USER=neko LOGNAME=neko SHELL=/bin/sh DISPLAY=:1
+export PATH=/usr/bin:/bin HOME=/home/neko USER=neko LOGNAME=neko SHELL=/bin/sh DISPLAY=:1 GDK_BACKEND=x11
 cd /home/neko
 /usr/bin/setuidgid neko /usr/bin/dbus-daemon --session --nofork \
     --print-address=1 > "$run_dir/dbus.address" 2> "$run_dir/dbus.log" &
@@ -185,7 +188,7 @@ case "$DBUS_SESSION_BUS_ADDRESS" in
 esac
 /usr/bin/setuidgid neko /usr/bin/evilwm \
     --fg '#75aaff' --bg '#273751' --fc '#7bd7bd' --bw 3 --fn fixed \
-    --term /usr/bin/neko-x11-welcome > "$run_dir/evilwm.log" 2>&1 &
+    --term /usr/bin/neko-gtk-welcome > "$run_dir/evilwm.log" 2>&1 &
 wm_pid=$!
 sleep 1
 if ! kill -0 "$wm_pid" 2>/dev/null; then
@@ -200,15 +203,21 @@ if [ "${1:-}" = --self-test ]; then
         --dest org.freedesktop.DBus --object-path /org/freedesktop/DBus \
         --method org.freedesktop.DBus.ListNames | grep -Fq org.freedesktop.DBus
     echo NEKO_X11_SESSION_BUS_READY
+    /usr/bin/setuidgid neko /usr/bin/gdbus call --session \
+        --dest org.a11y.Bus --object-path /org/a11y/bus \
+        --method org.a11y.Bus.GetAddress | grep -Fq unix:
+    echo NEKO_X11_ACCESSIBILITY_BUS_READY
     /usr/bin/setuidgid neko /usr/bin/neko-x11-extensions-check
     /usr/bin/setuidgid neko /usr/bin/neko-evilwm-check
+    /usr/bin/setuidgid neko /usr/bin/neko-gtk-welcome \
+        --self-test /tmp/neko-gtk-session-note.txt
     echo NEKO_X11_SESSION_READY
     exit 0
 fi
 
 echo 'NekoOS X11 session is running. Close the welcome window to return.'
 echo NEKO_X11_SESSION_BUS_RUNNING
-/usr/bin/setuidgid neko /usr/bin/neko-x11-welcome \
+/usr/bin/setuidgid neko /usr/bin/neko-gtk-welcome \
     > "$run_dir/welcome.log" 2>&1 &
 client_pid=$!
 echo NEKO_X11_SESSION_RUNNING
@@ -216,6 +225,6 @@ wait "$client_pid"
 client_pid=
 if [ "${1:-}" = --service ]; then
     cleanup
-    unset DISPLAY DBUS_SESSION_BUS_ADDRESS
+    unset DISPLAY GDK_BACKEND DBUS_SESSION_BUS_ADDRESS
     exec /usr/bin/neko-session
 fi

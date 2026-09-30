@@ -389,7 +389,7 @@ def boot_network(args):
     log.parent.mkdir(parents=True, exist_ok=True)
     command = [
         'qemu-system-x86_64', '-machine', 'q35', '-accel', 'tcg',
-        '-cpu', 'qemu64', '-m', '256M', '-smp', '2', '-nodefaults',
+        '-cpu', 'qemu64', '-m', '512M', '-smp', '2', '-nodefaults',
         '-display', 'none', '-monitor', 'none', '-serial', 'stdio',
         '-nic', 'user,model=virtio-net-pci,ipv6=off', '-no-reboot',
         '-kernel', str(images / 'bzImage'),
@@ -463,7 +463,7 @@ def boot(args):
     log.parent.mkdir(parents=True, exist_ok=True)
     command = [
         'qemu-system-x86_64', '-machine', 'q35', '-accel', 'tcg',
-        '-cpu', 'qemu64', '-m', '256M', '-smp', '2', '-nodefaults',
+        '-cpu', 'qemu64', '-m', '512M', '-smp', '2', '-nodefaults',
         '-display', 'none', '-monitor', 'none', '-serial', 'stdio',
         '-nic', 'none', '-no-reboot',
         '-kernel', str(images / 'bzImage'),
@@ -518,6 +518,13 @@ def boot(args):
                         b"neko-glib-check && "
                         b"neko-cairo-check /tmp/neko-cairo.png && "
                         b"neko-libxfce4util-check && "
+                        b"neko-fribidi-check && "
+                        b"neko-harfbuzz-check && "
+                        b"neko-pango-check /tmp/neko-pango-smoke.png && "
+                        b"neko-gdk-pixbuf-check /tmp/neko-pixbuf-smoke.png && "
+                        b"neko-atspi-check && "
+                        b"gtk-query-immodules-3.0 >/tmp/neko-gtk-immodules && "
+                        b"printf '%s\\n' GTK_TOOLKIT_READY && "
                         b"dbus-run-session -- gdbus call --session "
                         b"--dest org.freedesktop.DBus "
                         b"--object-path /org/freedesktop/DBus "
@@ -553,6 +560,12 @@ def boot(args):
                             and 'GLIB_RUNTIME_READY' in lines
                             and 'CAIRO_SMOKE_OK' in lines
                             and 'LIBXFCE4UTIL_RUNTIME_READY' in lines
+                            and 'FRIBIDI_SMOKE_OK' in lines
+                            and 'HARFBUZZ_SMOKE_OK' in lines
+                            and 'PANGO_SMOKE_OK' in lines
+                            and any(line.startswith('GDK_PIXBUF_SMOKE_OK:') for line in lines)
+                            and any(line.startswith('ATSPI_SMOKE_OK') for line in lines)
+                            and 'GTK_TOOLKIT_READY' in lines
                             and 'DBUS_SESSION_READY' in lines
                             and 'Hello from NekoOS' in lines
                             and any('Power down' in line for line in lines)):
@@ -911,6 +924,12 @@ def boot_system_update(args):
         "neko-glib-check | grep -Fqx GLIB_RUNTIME_READY && "
         "neko-cairo-check /tmp/neko-cairo.png | grep -Fqx CAIRO_SMOKE_OK && "
         "neko-libxfce4util-check | grep -Fqx LIBXFCE4UTIL_RUNTIME_READY && "
+        "neko-fribidi-check | grep -Fqx FRIBIDI_SMOKE_OK && "
+        "neko-harfbuzz-check | grep -Fqx HARFBUZZ_SMOKE_OK && "
+        "neko-pango-check /tmp/neko-pango-update.png | grep -Fqx PANGO_SMOKE_OK && "
+        "neko-gdk-pixbuf-check /tmp/neko-pixbuf-update.png | grep -Fq GDK_PIXBUF_SMOKE_OK && "
+        "neko-atspi-check | grep -Fq ATSPI_SMOKE_OK && "
+        "gtk-query-immodules-3.0 >/tmp/neko-gtk-immodules && "
         "dbus-run-session -- gdbus call --session "
         "--dest org.freedesktop.DBus "
         "--object-path /org/freedesktop/DBus "
@@ -961,7 +980,7 @@ def run_disk_guest(images, disk, guest_command, marker, pass_number, timeout, is
     qmp_path = graphics_qmp_path() if graphics else None
     command = [
         'qemu-system-x86_64', '-machine', 'q35', '-accel', 'tcg',
-        '-cpu', 'qemu64', '-m', ('512M' if graphics or video else '256M'), '-smp', '2', '-nodefaults',
+        '-cpu', 'qemu64', '-m', '512M', '-smp', '2', '-nodefaults',
         '-display', 'none', '-monitor',
         graphics_monitor_option(monitor_path) if graphics else 'none',
         '-serial', 'stdio',

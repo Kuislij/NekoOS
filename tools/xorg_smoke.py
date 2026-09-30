@@ -57,6 +57,8 @@ Section "InputDevice"
     Driver "evdev"
     Option "Device" "$pointer"
     Option "CorePointer"
+    # QEMU's tablet must deliver absolute positions, not touchpad deltas.
+    Option "Mode" "Absolute"
 EndSection
 Section "ServerLayout"
     Identifier "Layout0"

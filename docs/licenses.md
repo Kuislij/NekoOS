@@ -30,6 +30,19 @@
 | DejaVu fonts | 2.37 | upstream `LICENSE` в `/usr/share/licenses/dejavu-fonts/LICENSE`; полные условия для шрифтов в этом файле, метаданные `NOASSERTION` |
 | D-Bus | 1.16.2 | upstream `COPYING` и `LICENSES/` в `/usr/share/licenses/dbus/`; метаданные пакета `GPL-2.0-or-later`, при перераспространении учитывать также сохранённые AFL/MIT-уведомления |
 | Cairo | 1.18.6 | upstream `COPYING`, `COPYING-LGPL-2.1` и `COPYING-MPL-1.1` сохранены в `/usr/share/licenses/cairo/`; альтернативные условия для библиотеки, метаданные `NOASSERTION` |
+| libXi | 1.8.3 | upstream `COPYING` в `/usr/share/licenses/libxi/COPYING`; разрешительные уведомления X.Org, метаданные `NOASSERTION` |
+| libXcursor | 1.2.3 | upstream `COPYING` в `/usr/share/licenses/libxcursor/COPYING`; разрешительные уведомления X.Org, метаданные `NOASSERTION` |
+| libXinerama | 1.1.6 | upstream `COPYING` в `/usr/share/licenses/libxinerama/COPYING`; разрешительные уведомления X.Org, метаданные `NOASSERTION` |
+| libXcomposite | 0.4.7 | upstream `COPYING` в `/usr/share/licenses/libxcomposite/COPYING`; разрешительные уведомления X.Org, метаданные `NOASSERTION` |
+| libXdamage | 1.1.7 | upstream `COPYING` в `/usr/share/licenses/libxdamage/COPYING`; разрешительные уведомления X.Org, метаданные `NOASSERTION` |
+| libXtst | 1.2.5 | upstream `COPYING` в `/usr/share/licenses/libxtst/COPYING`; разрешительные уведомления X.Org, метаданные `NOASSERTION` |
+| AT-SPI2 core (ATK, AT-SPI, atk-bridge) | 2.58.9 | upstream `COPYING` в `/usr/share/licenses/at-spi2-core/COPYING`; LGPL-2.1-or-later |
+| libepoxy | 1.5.10 | upstream `COPYING` в `/usr/share/licenses/libepoxy/COPYING`; MIT |
+| FriBidi | 1.0.16 | upstream `COPYING` в `/usr/share/licenses/fribidi/COPYING`; LGPL-2.1-or-later |
+| HarfBuzz | 12.3.0 | upstream `COPYING` в `/usr/share/licenses/harfbuzz/COPYING`; MIT и сохранённые уведомления |
+| Pango | 1.56.4 | upstream `COPYING` в `/usr/share/licenses/pango/COPYING`; LGPL-2.1-or-later |
+| GdkPixbuf | 2.44.8 | upstream `COPYING` в `/usr/share/licenses/gdk-pixbuf/COPYING`; LGPL-2.1-or-later |
+| GTK3 | 3.24.52 | upstream `COPYING` в `/usr/share/licenses/gtk3/COPYING`; LGPL-2.1-or-later |
 | libxkbfile | 1.2.0 | `COPYING` в upstream tarball и `/usr/share/licenses/libxkbfile/COPYING` в пакете; несколько разрешительных уведомлений, метаданные `NOASSERTION` |
 | xkbcomp | 1.5.0 | `COPYING` в upstream tarball и `/usr/share/licenses/xkbcomp/COPYING` в пакете; несколько разрешительных уведомлений, метаданные `NOASSERTION` |
 | xkeyboard-config | 2.48 | `COPYING` в upstream tarball и `/usr/share/licenses/xkeyboard-config/COPYING` в пакете; несколько разрешительных уведомлений, метаданные `NOASSERTION` |

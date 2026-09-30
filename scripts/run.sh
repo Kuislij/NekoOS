@@ -8,6 +8,7 @@ network=off
 system=off
 graphics=off
 x11=off
+no_build=off
 for option in "$@"; do
     case "$option" in
         --verbose) quiet='' ;;
@@ -17,18 +18,64 @@ for option in "$@"; do
         --system) system=on ;;
         --graphics) graphics=on ;;
         --x11) graphics=on; x11=on ;;
-        *) die 'Usage: bash os run [--ram] [--iso] [--system] [--net] [--graphics|--x11] [--verbose]' ;;
+        --no-build) no_build=on ;;
+        *) die 'Usage: bash os run [--no-build] [--ram] [--iso] [--system] [--net] [--graphics|--x11] [--verbose]' ;;
     esac
 done
 [[ "$boot" != iso || "$mode" != ram ]] || die 'ISO boot currently requires the persistent virtual disk.'
 [[ "$system" != on || "$mode" == disk ]] || die '--system requires a virtual disk.'
 [[ "$x11" != on || "$boot" != iso ]] || die '--x11 is not yet available with --iso.'
 mkdir -p "$root/build/logs"
-echo 'Сборка NekoOS; подробный вывод: build/logs/build.log'
-if ! bash "$root/scripts/build.sh" > "$root/build/logs/run-build.log" 2>&1; then
-    tail -n 35 "$root/build/logs/run-build.log" >&2
-    die 'Сборка не удалась. Полный вывод: build/logs/build.log'
+if [[ "$no_build" != on ]]; then
+    echo 'Сборка NekoOS; подробный вывод: build/logs/build.log'
+    if ! bash "$root/scripts/build.sh" > "$root/build/logs/run-build.log" 2>&1; then
+        tail -n 35 "$root/build/logs/run-build.log" >&2
+        die 'Сборка не удалась. Полный вывод: build/logs/build.log'
+    fi
 fi
+
+# Keep build outputs stable from verification through the lifetime of QEMU.
+# The builder takes the exclusive version of this same lock.
+[[ ! -L "$root/build/.lock" && (! -e "$root/build/.lock" || -f "$root/build/.lock") ]] ||
+    die 'Build lock must be a regular file, not a symlink.'
+exec 9>>"$root/build/.lock"
+flock -s -n 9 || die 'Another build is changing the images. Wait for it to finish before running NekoOS.'
+
+# A cached image must pass the same checksum and rootfs validation as boot tests.
+# Check every manifest path before sha256sum follows it, require checksums for
+# selected boot inputs, and reject paths outside the four build outputs.
+images="$root/out/images"
+required_images=(bzImage initramfs.cpio.gz)
+if [[ "$system" == on || "$boot" == iso ]]; then
+    required_images+=(bootstrap.cpio.gz)
+fi
+if [[ "$system" == on ]]; then
+    required_images+=(system-template.img)
+fi
+for file in SHA256SUMS "${required_images[@]}"; do
+    [[ -f "$images/$file" && ! -L "$images/$file" ]] ||
+        die "Missing or unsafe image: $file. Run bash os build."
+done
+declare -A manifest_files=()
+while IFS= read -r entry || [[ -n "$entry" ]]; do
+    [[ "$entry" =~ ^[0-9a-f]{64}\ \ (bzImage|initramfs[.]cpio[.]gz|bootstrap[.]cpio[.]gz|system-template[.]img)$ ]] ||
+        die 'Image checksum manifest contains a malformed or unsafe entry. Run bash os build.'
+    file="${BASH_REMATCH[1]}"
+    [[ -z "${manifest_files[$file]+present}" ]] ||
+        die "Image checksum manifest repeats $file. Run bash os build."
+    [[ -f "$images/$file" && ! -L "$images/$file" ]] ||
+        die "Missing or unsafe checksummed image: $file. Run bash os build."
+    manifest_files[$file]=present
+done < "$images/SHA256SUMS"
+for file in "${required_images[@]}"; do
+    [[ -n "${manifest_files[$file]+present}" ]] ||
+        die "Image checksum is missing for $file. Run bash os build."
+done
+echo 'Проверяю контрольные суммы и содержимое готового образа NekoOS.'
+(cd "$images" && sha256sum --strict --check SHA256SUMS >/dev/null) ||
+    die 'Image checksum verification failed; refusing to boot. Run bash os build.'
+python3 "$root/tools/validate_image.py" "$images/initramfs.cpio.gz" >/dev/null ||
+    die 'Image contents failed validation; refusing to boot. Run bash os build.'
 drive_args=()
 net_args=(-nic none)
 if [[ "$network" == on ]]; then
@@ -38,10 +85,9 @@ fi
 boot_args=(-kernel "$root/out/images/bzImage" -initrd "$root/out/images/initramfs.cpio.gz")
 append="console=ttyS0,115200 rdinit=/init panic=-1 $quiet"
 display_args=(-display none)
-memory=256M
+memory=512M
 if [[ "$graphics" == on ]]; then
     display_args=(-display gtk -device virtio-vga -device virtio-keyboard-pci -device virtio-tablet-pci)
-    memory=512M
     # Kernel messages stay on serial instead of drawing over the desktop.
     echo 'Открываю графический экран NekoOS в QEMU. Текстовая консоль остаётся в этом терминале.'
 fi

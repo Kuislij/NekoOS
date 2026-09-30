@@ -10,6 +10,15 @@ from boot_test import ROOT, run_disk_guest
 
 
 GUEST_COMMAND = b'''attempt=0
+a11y_processes_alive() {
+    for proc_comm in /proc/[0-9]*/comm; do
+        process_name=$(cat "$proc_comm" 2>/dev/null || true)
+        case "$process_name" in
+            at-spi-bus-laun*|at-spi2-registr*) return 0 ;;
+        esac
+    done
+    return 1
+}
 while ! grep -Fq NEKO_X11_SESSION_RUNNING /run/neko/services/desktop.log 2>/dev/null; do
     attempt=$((attempt + 1))
     if [ "$attempt" -ge 20 ]; then break; fi
@@ -23,16 +32,29 @@ if grep -Fq NEKO_X11_SESSION_RUNNING /run/neko/services/desktop.log &&
    DBUS_SESSION_BUS_ADDRESS="$bus_address" setuidgid neko gdbus call --session \
        --dest org.freedesktop.DBus --object-path /org/freedesktop/DBus \
        --method org.freedesktop.DBus.ListNames | grep -Fq org.freedesktop.DBus &&
+   a11y_address=$(DBUS_SESSION_BUS_ADDRESS="$bus_address" setuidgid neko gdbus call --session \
+       --dest org.a11y.Bus --object-path /org/a11y/bus \
+       --method org.a11y.Bus.GetAddress) &&
+   a11y_address=${a11y_address#*"'"} &&
+   a11y_address=${a11y_address%%"'"*} &&
+   test -n "$a11y_address" &&
+   setuidgid neko gdbus introspect --address "$a11y_address" \
+       --dest org.a11y.atspi.Registry --object-path /org/a11y/atspi/registry \
+       > /tmp/neko-registry-introspection &&
+   grep -Fq org.a11y.atspi.Registry /tmp/neko-registry-introspection &&
    DISPLAY=:1 neko-x11-extensions-check &&
    DISPLAY=:1 neko-evilwm-check &&
    neko-service stop desktop; then
     attempt=0
-    while test -S /tmp/.X11-unix/X1 && [ "$attempt" -lt 10 ]; do
+    while { test -S /tmp/.X11-unix/X1 || a11y_processes_alive; } && [ "$attempt" -lt 10 ]; do
         sleep 1
         attempt=$((attempt + 1))
     done
-    if ! test -S /tmp/.X11-unix/X1; then
+    if ! test -S /tmp/.X11-unix/X1 && ! a11y_processes_alive; then
         printf '\n%s%s\n' 'NEKO_X11_AUTOSTART_' 'READY'
+    else
+        echo NEKO_X11_A11Y_CLEANUP_FAILED
+        ps
     fi
 fi
 poweroff

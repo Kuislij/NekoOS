@@ -256,6 +256,33 @@ fi
 readelf -l "$stage/usr/bin/neko-libxfce4util-check" |
     grep -Fq '/lib/ld-musl-x86_64.so.1' ||
     die 'Xfce utility probe uses the wrong interpreter.'
+# Resolve each new runtime probe only against the assembled NekoOS SDK.
+compile_toolkit_probe() {
+    local source="$1" output="$2" expected="$3"
+    shift 3
+    local pkgconf="$root/build/host-tools/pkgconf-2.5.1/install/bin/pkgconf"
+    local -a cflags libs
+    local dynamic
+    read -r -a cflags <<< "$(PKG_CONFIG_LIBDIR="$stage/usr/lib/pkgconfig:$stage/usr/share/pkgconfig" \
+        PKG_CONFIG_SYSROOT_DIR="$stage" PKG_CONFIG_PATH= "$pkgconf" --cflags "$@")"
+    read -r -a libs <<< "$(PKG_CONFIG_LIBDIR="$stage/usr/lib/pkgconfig:$stage/usr/share/pkgconfig" \
+        PKG_CONFIG_SYSROOT_DIR="$stage" PKG_CONFIG_PATH= "$pkgconf" --libs "$@")"
+    "$root/scripts/host-musl-gcc.sh" "${cflags[@]}" "$source" \
+        -Wl,-rpath-link,"$stage/usr/lib" "${libs[@]}" -o "$stage/usr/bin/$output"
+    dynamic="$(readelf -d "$stage/usr/bin/$output")"
+    grep -Fq "Shared library: [$expected]" <<< "$dynamic" || die "$output lacks $expected."
+    if grep -Eq 'RPATH|RUNPATH|libc.so.6|libstdc\+\+' <<< "$dynamic"; then
+        die "$output contains a host dependency or build path."
+    fi
+    readelf -l "$stage/usr/bin/$output" | grep -Fq '/lib/ld-musl-x86_64.so.1' ||
+        die "$output uses the wrong interpreter."
+}
+compile_toolkit_probe "$root/recipes/fribidi/smoke.c" neko-fribidi-check libfribidi.so.0 fribidi
+compile_toolkit_probe "$root/recipes/harfbuzz/smoke.c" neko-harfbuzz-check libharfbuzz.so.0 harfbuzz-gobject freetype2
+compile_toolkit_probe "$root/recipes/pango/smoke.c" neko-pango-check libpango-1.0.so.0 pangocairo fontconfig
+compile_toolkit_probe "$root/tests/gdk_pixbuf_runtime.c" neko-gdk-pixbuf-check libgdk_pixbuf-2.0.so.0 gdk-pixbuf-2.0
+compile_toolkit_probe "$root/recipes/at-spi2-core/smoke.c" neko-atspi-check libatspi.so.0 atk atk-bridge-2.0 atspi-2
+bash "$root/scripts/build-gtk-welcome.sh" "$stage/usr/bin/neko-gtk-welcome" "$stage"
 "$root/scripts/host-musl-gcc.sh" "$root/tests/evilwm_runtime.c" \
     -I "$stage/usr/include" -L "$stage/usr/lib" \
     -Wl,-rpath-link,"$stage/usr/lib" -lX11 \

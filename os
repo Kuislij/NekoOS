@@ -11,6 +11,6 @@ case "${1:-help}" in
     build|run) exec bash "$root/scripts/$1.sh" "${@:2}" ;;
     iso) exec bash "$root/scripts/create-iso.sh" "${@:2}" ;;
     test) exec python3 "$root/tools/boot_test.py" "${@:2}" ;;
-    help|--help|-h) printf 'NekoOS\nUsage: bash os {doctor|check|build|image|system-image|system-update|system-rollback|iso|run|test|help}\n' ;;
+    help|--help|-h) printf 'NekoOS\nUsage: bash os {doctor|check|build|image|system-image|system-update|system-rollback|iso|run|test|help}\nRun existing verified images: bash os run --no-build [--system] [--x11]\n' ;;
     *) printf 'Unknown command: %s\n' "$1" >&2; exit 2 ;;
 esac

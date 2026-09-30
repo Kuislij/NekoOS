@@ -29,8 +29,15 @@ evilwm 1.5 как временный оконный менеджер. Ещё д�
 `libxfce4util`, FreeType, Fontconfig, DejaVu, Cairo и пользовательскую шину D-Bus.
 В QEMU Xorg открыл дисплей на virtio-GPU, загрузил драйверы ввода,
 отдельная Xlib-программа создала окно, а пользовательский X11-сеанс
-получил работающую шину D-Bus. Далее — стек GTK 3 и остальные компоненты
-Xfce, включая Thunar как отдельное приложение.
+получил работающую шину D-Bus. Новый слой добавляет GTK 3.24.52,
+Pango 1.56.4, HarfBuzz 12.3.0, FriBidi 1.0.16, GdkPixbuf 2.44.8,
+AT-SPI2 core 2.58.9, libepoxy 1.5.10 и шесть библиотек расширений X11.
+Приложение GTK3 показывает русскоязычное окно и редактор заметки,
+которая сохраняется в `/home/neko/Documents/Neko-note.txt`.
+Проверенный образ содержит 51 системный пакет и 7701 запись initramfs.
+Результаты сборки и QEMU фиксируются в
+[отчёте GTK3](validation-gtk3-2026-09-30.md).
+Далее — остальные компоненты Xfce, включая Thunar как отдельное приложение.
 
 1. **Готово.** WSL2/Ubuntu, зависимости, две проверки компилятора/Make/Ninja/QEMU.
 2. **Готово.** Закреплённые Linux/BusyBox, SHA256, OpenPGP-подпись Linux,
@@ -65,10 +72,14 @@ Xfce, включая Thunar как отдельное приложение.
    libXfont2, font-misc-misc, libxcvt, libpciaccess, libdrm, libsha1,
    Xorg, libevdev, mtdev и xf86-input-evdev, а также libpng, Expat,
    PCRE2, GLib, libxfce4util, FreeType, Fontconfig, DejaVu, Cairo и D-Bus;
+   добавлены libXi 1.8.3, libXcursor 1.2.3, libXinerama 1.1.6,
+   libXcomposite 0.4.7, libXdamage 1.1.7, libXtst 1.2.5,
+   AT-SPI2 core 2.58.9, libepoxy 1.5.10, FriBidi 1.0.16,
+   HarfBuzz 12.3.0, Pango 1.56.4, GdkPixbuf 2.44.8 и GTK 3.24.52;
    закреплённые Meson, xcb-proto, pkgconf, bdftopcf и gperf работают только
    на хосте.
    Проверены версии и наличие зависимостей при установке в образ. В очереди
-   38 системных пакетов и 5999 записей initramfs; образ содержит отдельный
+   51 системный пакет; образ содержит отдельный
    X11-сеанс. В QEMU Xorg загрузил драйверы клавиатуры и мыши, передал
    настоящие события Xlib-клиенту и запустил управляемое evilwm окно.
    Проверены поиск шрифта DejaVu, новые библиотеки и обмен сообщениями по
@@ -99,12 +110,18 @@ Xfce, включая Thunar как отдельное приложение.
     `bash os run --x11` автоматически запускает этот многопроцессный сеанс
     и пользовательский `dbus-daemon` от `neko`. В образе уже есть GLib,
     GObject, GIO, libxfce4util, PNG/XML-библиотеки, FreeType, Fontconfig,
-    DejaVu и Cairo, но они пока не рисуют полноценный рабочий стол.
+    DejaVu и Cairo. GTK3-приложение добавляет обычные элементы интерфейса:
+    русскую надпись, PNG-изображение, текстовое поле и кнопку «Сохранить».
+    Заметка открывается из `/home/neko/Documents/Neko-note.txt` и сохраняется
+    на пользовательском диске. Pango, HarfBuzz и FriBidi обрабатывают текст,
+    GdkPixbuf — изображения, AT-SPI — интерфейс доступности приложения.
+    Cairo дополнен выводом PDF, PostScript и SVG, который требуется
+    GTK для работы с документами.
     Следующий крупный этап — полный графический сеанс из
     готовых компонентов: Xfce (`xfdesktop`, `xfwm4`, панель и менеджер
-    сеанса) и Thunar как отдельный файловый менеджер. Для него нужны
-    Pango, GdkPixbuf, GTK 3.24, дополнительные библиотеки X11,
-    значки, xfconf, прочие модули Xfce, обнаружение устройств и запуск
+    сеанса) и Thunar как отдельный файловый менеджер. Следом нужны
+    значки, xfconf, libxfce4ui, garcon, exo, прочие модули Xfce,
+    обнаружение устройств и запуск
     полного сеанса. Порядок задан
     [руководством Xfce 4.20](https://docs.xfce.org/xfce/4.20/building) и
     [зависимостями GTK 3](https://docs.gtk.org/gtk3/building.html).
@@ -123,7 +140,8 @@ Xfce, включая Thunar как отдельное приложение.
     [ADR-019](adr/0019-xlib-xext-and-xorg-milestone.md), а подготовленные
     серверные зависимости — в [ADR-020](adr/0020-xorg-server-dependencies.md),
     первый оконный менеджер — в [ADR-021](adr/0021-window-managed-x11-session.md),
-    а новый библиотечный слой — в [ADR-022](adr/0022-gtk-xfce-foundation.md).
+    новый библиотечный слой — в [ADR-022](adr/0022-gtk-xfce-foundation.md),
+    а GTK3 и заметка — в [ADR-023](adr/0023-gtk3-application-layer.md).
 14. Проверки реального железа и подготовка к ежедневному использованию.
 
 После появления загрузки каждый этап должен сохранять boot smoke test.

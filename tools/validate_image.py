@@ -403,6 +403,39 @@ def validate(entries):
                  'usr/include/linux/version.h',
                  'usr/lib/libc.a', 'usr/lib/crt1.o', 'usr/lib/tcc/libtcc1.a'):
         entry(path, stat.S_ISREG, 'regular file')
+    # The toolkit ABI links must resolve to real packaged libraries. Their
+    # implementation filenames vary independently of the ABI SONAME.
+    for soname in ('libXi.so.6', 'libXcursor.so.1', 'libXinerama.so.1',
+                   'libXcomposite.so.1', 'libXdamage.so.1', 'libXtst.so.6',
+                   'libatk-1.0.so.0', 'libatk-bridge-2.0.so.0', 'libatspi.so.0',
+                   'libepoxy.so.0', 'libfribidi.so.0', 'libharfbuzz.so.0',
+                   'libpango-1.0.so.0', 'libpangocairo-1.0.so.0',
+                   'libpangoft2-1.0.so.0', 'libgdk_pixbuf-2.0.so.0',
+                   'libgtk-3.so.0', 'libgdk-3.so.0'):
+        path = f'usr/lib/{soname}'
+        target = entry(path, stat.S_ISLNK, 'symlink')[1].decode('utf-8')
+        require('/' not in target and target not in ('', '.', '..'),
+                f'unsafe toolkit library link: {path}')
+        entry(f'usr/lib/{target}', stat.S_ISREG, 'regular library')
+    for name in ('libxi', 'libxcursor', 'libxinerama', 'libxcomposite',
+                 'libxdamage', 'libxtst', 'at-spi2-core', 'libepoxy',
+                 'fribidi', 'harfbuzz', 'pango', 'gdk-pixbuf', 'gtk3'):
+        entry(f'usr/share/nekoos/system-packages/{name}.manifest',
+              stat.S_ISREG, 'package manifest')
+        entry(f'usr/share/licenses/{name}', stat.S_ISDIR, 'license directory')
+    for name in ('xi', 'xcursor', 'xinerama', 'xcomposite', 'xdamage', 'xtst',
+                 'atk', 'atk-bridge-2.0', 'atspi-2', 'epoxy', 'fribidi',
+                 'harfbuzz', 'harfbuzz-gobject', 'pango', 'pangocairo',
+                 'gdk-pixbuf-2.0', 'gtk+-3.0', 'gtk+-x11-3.0'):
+        entry(f'usr/lib/pkgconfig/{name}.pc', stat.S_ISREG, 'SDK metadata')
+    for path in ('usr/include/gtk-3.0/gtk/gtk.h',
+                 'usr/share/glib-2.0/schemas/gschemas.compiled',
+                 'usr/share/dbus-1/services/org.a11y.Bus.service'):
+        entry(path, stat.S_ISREG, 'toolkit runtime file')
+    for name in ('neko-fribidi-check', 'neko-harfbuzz-check', 'neko-pango-check',
+                 'neko-gdk-pixbuf-check', 'neko-atspi-check', 'neko-gtk-welcome'):
+        require(entry(f'usr/bin/{name}', stat.S_ISREG, 'runtime program')[0] & 0o111,
+                f'{name} is not executable')
     for name in ('6x13.pcf', '9x15.pcf'):
         path = f'usr/share/fonts/X11/misc/{name}'
         require(entries[path][1].startswith(b'\x01fcp'),

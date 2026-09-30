@@ -14,6 +14,10 @@ static int check_input(Display *display, Window window)
     int key_seen = 0;
     int button_seen = 0;
     int motion_seen = 0;
+    /* Match the final QMP tablet position, rather than a focus/grab motion
+       event that can arrive without the physical pointer moving at all. */
+    int target_x = DisplayWidth(display, DefaultScreen(display)) * 30000 / 32767;
+    int target_y = DisplayHeight(display, DefaultScreen(display)) * 25000 / 32767;
 
     XSelectInput(display, window, KeyPressMask | ButtonPressMask |
                                 PointerMotionMask);
@@ -65,9 +69,13 @@ static int check_input(Display *display, Window window)
                 button_seen = 1;
             }
             if (!motion_seen && event.type == MotionNotify) {
-                puts("XORG_POINTER_MOVE_READY");
-                fflush(stdout);
-                motion_seen = 1;
+                int dx = event.xmotion.x_root - target_x;
+                int dy = event.xmotion.y_root - target_y;
+                if (dx >= -4 && dx <= 4 && dy >= -4 && dy <= 4) {
+                    puts("XORG_POINTER_MOVE_READY");
+                    fflush(stdout);
+                    motion_seen = 1;
+                }
             }
         }
     }

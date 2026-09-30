@@ -24,6 +24,19 @@ system_package_archives=(
     libxfixes-6.0.2.nspkg
     libxrandr-1.5.5.nspkg
     cairo-1.18.6.nspkg
+    libxi-1.8.3.nspkg
+    libxcursor-1.2.3.nspkg
+    libxinerama-1.1.6.nspkg
+    libxcomposite-0.4.7.nspkg
+    libxdamage-1.1.7.nspkg
+    libxtst-1.2.5.nspkg
+    at-spi2-core-2.58.9.nspkg
+    libepoxy-1.5.10.nspkg
+    fribidi-1.0.16.nspkg
+    harfbuzz-12.3.0.nspkg
+    pango-1.56.4.nspkg
+    gdk-pixbuf-2.44.8.nspkg
+    gtk3-3.24.52.nspkg
     evilwm-1.5.nspkg
     libxkbfile-1.2.0.nspkg
     xkbcomp-1.5.0.nspkg

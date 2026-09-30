@@ -108,7 +108,7 @@ EOF
         --buildtype=release --wrap-mode=nofallback -Ddefault_library=shared \
         -Dauto_features=disabled -Dtests=disabled -Dgtk_doc=false \
         -Dpng=enabled -Dfreetype=enabled -Dfontconfig=enabled \
-        -Dxlib=enabled -Dxcb=enabled -Dglib=enabled -Dzlib=disabled \
+        -Dxlib=enabled -Dxcb=enabled -Dglib=enabled -Dzlib=enabled \
         -Dtee=disabled -Dxlib-xcb=disabled -Dlzo=disabled \
         -Dgtk2-utils=disabled -Dsymbol-lookup=disabled -Dspectre=disabled
     python3 "$meson" compile -C "$work/build" -j "${JOBS:-4}"
@@ -131,6 +131,9 @@ gobject_library="$(readlink -f "$stage/usr/lib/libcairo-gobject.so.2")"
    -f "$stage/usr/include/cairo/cairo-xlib.h" &&
    -f "$stage/usr/include/cairo/cairo-xlib-xrender.h" &&
    -f "$stage/usr/include/cairo/cairo-xcb.h" &&
+   -f "$stage/usr/include/cairo/cairo-pdf.h" &&
+   -f "$stage/usr/include/cairo/cairo-ps.h" &&
+   -f "$stage/usr/include/cairo/cairo-svg.h" &&
    -f "$stage/usr/lib/pkgconfig/cairo.pc" &&
    -f "$stage/usr/lib/pkgconfig/cairo-png.pc" &&
    -f "$stage/usr/lib/pkgconfig/cairo-ft.pc" &&
@@ -186,6 +189,6 @@ python3 "$root/tools/system_package.py" build \
     --depends 'glib>=2.84.4' --depends 'libpng>=1.6.58' \
     --depends 'libx11>=1.8.13' --depends 'libxcb>=1.17.0' \
     --depends 'libxext>=1.3.7' --depends 'libxrender>=0.9.12' \
-    --depends 'pixman>=0.46.4' --output "$package"
+    --depends 'pixman>=0.46.4' --depends 'zlib>=1.3.2' --output "$package"
 python3 "$root/tools/system_package.py" verify "$package"
 printf 'CAIRO_PACKAGE_READY: %s\n' "$package"
