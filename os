@@ -2,6 +2,7 @@
 set -euo pipefail
 root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 case "${1:-help}" in
+    arch) exec bash "$root/scripts/arch.sh" "${@:2}" ;;
     doctor) exec bash "$root/scripts/bootstrap-dev.sh" "${@:2}" ;;
     check) exec bash "$root/scripts/check-dev.sh" "${@:2}" ;;
     image) exec bash "$root/scripts/create-disk.sh" "${@:2}" ;;
@@ -11,6 +12,6 @@ case "${1:-help}" in
     build|run) exec bash "$root/scripts/$1.sh" "${@:2}" ;;
     iso) exec bash "$root/scripts/create-iso.sh" "${@:2}" ;;
     test) exec python3 "$root/tools/boot_test.py" "${@:2}" ;;
-    help|--help|-h) printf 'NekoOS\nUsage: bash os {doctor|check|build|image|system-image|system-update|system-rollback|iso|run|test|help}\nRun existing verified images: bash os run --no-build [--system] [--x11]\n' ;;
+    help|--help|-h) printf 'NekoOS\nPrimary desktop: bash os arch {build|run|test}\nLegacy laboratory: bash os {doctor|check|build|image|system-image|system-update|system-rollback|iso|run|test|help}\n' ;;
     *) printf 'Unknown command: %s\n' "$1" >&2; exit 2 ;;
 esac

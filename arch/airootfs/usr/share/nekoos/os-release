@@ -1,0 +1,7 @@
+NAME="NekoOS"
+PRETTY_NAME="NekoOS (Arch development desktop)"
+ID=nekoos
+ID_LIKE=arch
+HOME_URL="https://github.com/Kuislij/NekoOS"
+DOCUMENTATION_URL="https://github.com/Kuislij/NekoOS"
+BUILD_ID=arch-desktop-dev

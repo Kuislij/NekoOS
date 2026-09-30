@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=NekoOS desktop defaults
+Exec=/usr/local/lib/nekoos/desktop-first-login.sh
+OnlyShowIn=XFCE;
+NoDisplay=true
+Terminal=false
+X-XFCE-Autostart-Delay=3

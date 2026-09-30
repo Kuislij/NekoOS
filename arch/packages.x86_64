@@ -1,0 +1,35 @@
+# NekoOS development desktop: official Arch repositories, no AUR packages.
+# Package versions and signatures are recorded by the image builder.
+base
+linux
+base-devel
+sudo
+grub
+efibootmgr
+dosfstools
+rsync
+qemu-guest-agent
+xorg-server
+xorg-xinit
+xorg-xrandr
+xorg-xset
+xorg-xprop
+xorg-setxkbmap
+wmctrl
+xdotool
+xf86-input-libinput
+mesa
+librsvg
+xfce4
+lightdm
+lightdm-gtk-greeter
+networkmanager
+network-manager-applet
+gvfs
+mousepad
+firefox
+firefox-i18n-ru
+ttf-dejavu
+adwaita-icon-theme
+adwaita-icon-theme-legacy
+xdg-user-dirs

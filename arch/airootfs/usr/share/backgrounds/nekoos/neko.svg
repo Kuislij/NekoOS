@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080">
+  <defs>
+    <linearGradient id="sky" x2="1" y2="1">
+      <stop stop-color="#122333"/>
+      <stop offset="1" stop-color="#304a5e"/>
+    </linearGradient>
+    <radialGradient id="glow">
+      <stop stop-color="#68b9a7" stop-opacity=".25"/>
+      <stop offset="1" stop-color="#68b9a7" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <path fill="url(#sky)" d="M0 0h1920v1080H0z"/>
+  <ellipse fill="url(#glow)" cx="960" cy="510" rx="760" ry="600"/>
+  <g transform="translate(960 475)" fill="none" stroke="#a8dcd0" stroke-width="7" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M-100 60V-58l57 43Q0-35 43-15l57-43V60q0 63-100 63T-100 60Z"/>
+    <path d="M-54 42h8m92 0h8M-12 72l12 10 12-10M0 83v13m0 0q-18 17-34 0m34 0q18 17 34 0"/>
+  </g>
+  <text x="960" y="725" fill="#e6efed" font-family="DejaVu Sans, sans-serif" font-size="72" font-weight="300" text-anchor="middle">NekoOS</text>
+</svg>

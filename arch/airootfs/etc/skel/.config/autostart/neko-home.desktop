@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Files
+Name[ru]=Файлы
+Comment=Open the home folder
+Comment[ru]=Открыть домашнюю папку
+Exec=thunar
+Icon=system-file-manager
+OnlyShowIn=XFCE;
+Terminal=false
+X-XFCE-Autostart-Delay=2
