@@ -35,8 +35,8 @@ root-помощник через WSL либо sudo. На Ubuntu/Debian нужн�
 Из Windows доступны `.\Start-NekoOS.ps1`, `-Build`, `-Test`, `-Uefi`
 и `-Headless`. Первая сборка завершена (471 пакет), полный тест прошёл
 две BIOS-загрузки и третью UEFI с Xfce/Thunar/Firefox.
-Пройдены 57 unit-тестов; подробности — в
-[отчёте Arch](validation-arch-desktop-2026-09-30.md).
+Первый прогон из [отчёта Arch](validation-arch-desktop-2026-09-30.md)
+содержал 57 unit-тестов; текущий набор включает 65 с Live-проверками.
 В новой Ubuntu/Debian-среде `bash scripts/bootstrap-dev.sh --install`
 устанавливает перечисленные инструменты, включая `fdisk`, `zstd` и OVMF.
 Пакет [`fdisk`](https://packages.debian.org/trixie/fdisk) нужен для `sfdisk`,
