@@ -1,0 +1,12 @@
+# Live boot support and common hardware firmware from the signed snapshot.
+mkinitcpio
+mkinitcpio-archiso
+mkinitcpio-nfs-utils
+syslinux
+linux-firmware
+intel-ucode
+amd-ucode
+sof-firmware
+wireless-regdb
+usbutils
+pciutils

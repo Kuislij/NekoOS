@@ -1,0 +1,49 @@
+name: Build NekoOS Live ISO
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: live-iso-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  live-iso:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Install build and VM tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y curl gnupg zstd rsync python3 util-linux e2fsprogs qemu-system-x86 qemu-utils ovmf
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: cache/arch
+          key: arch-snapshot-20260929-live-${{ hashFiles('arch/sources.sh', 'arch/packages.x86_64', 'live/packages.x86_64') }}
+      - name: Test tools before building
+        run: python3 -m unittest discover -s tests -v
+      - name: Build signed-package live image
+        run: bash os arch iso build
+      - name: Boot BIOS and UEFI from CD and USB
+        run: bash os arch iso test --no-build --headless --timeout 900
+      - name: Upload tested ISO and manifest
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: nekoos-live-x86_64-${{ github.run_number }}
+          path: out/arch/iso/
+          compression-level: 0
+          retention-days: 7
+          if-no-files-found: error
+      - name: Upload diagnostic logs and screenshots
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: live-iso-diagnostics-${{ github.run_number }}
+          path: |
+            build/logs/arch-iso-*.log
+            build/logs/arch-iso-*.json
+            out/previews/arch-live*.png
+          retention-days: 7
+          if-no-files-found: ignore

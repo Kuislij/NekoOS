@@ -3,7 +3,7 @@
 set -euo pipefail
 root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
 die() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
-(( $# == 0 )) || die 'Usage: bash os arch build'
+[[ $# == 0 || ($# == 1 && "$1" == --bootstrap-only) ]] || die 'Usage: bash os arch build'
 [[ "$(uname -s)" == Linux && "$(uname -m)" == x86_64 && "$root" != /mnt/* ]] ||
     die 'Use the Linux filesystem of x86_64 Linux / WSL2.'
 (( EUID != 0 )) || die 'Run the frontend as a regular user; it elevates only its root helper.'
@@ -57,6 +57,10 @@ awk -v key="$ARCH_RELEASE_KEY_FINGERPRINT" \
     die 'The Arch package list or NekoOS desktop profile is missing.'
 uid="$(id -u)"
 gid="$(id -g)"
+if [[ "${1:-}" == --bootstrap-only ]]; then
+    echo 'ARCH_BOOTSTRAP_READY'
+    exit 0
+fi
 echo 'Собираю отдельный диск NekoOS с готовыми пакетами Arch и рабочим столом Xfce.'
 if [[ -n "${WSL_DISTRO_NAME:-}" ]] && command -v wsl.exe >/dev/null; then
     wsl.exe -d "$WSL_DISTRO_NAME" -u root -- \

@@ -1,0 +1,2 @@
+# Let the live boot mount its own medium; desktop automount is disabled.
+SUBSYSTEM=="block", ENV{UDISKS_AUTO}="0"

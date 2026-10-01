@@ -2,13 +2,15 @@
 
 ## Приоритет с 2026-10-01
 
-Следующий этап — Live ISO для пробной USB-загрузки и ручная сборка
-на GitHub Actions. Затем — проверенные обновления и восстановление,
+Добавлены Live ISO для пробной USB-загрузки и ручная сборка
+на GitHub Actions. Следующий этап — проверенные обновления и восстановление,
 устойчивые источники и единый центр приложений разных Linux-экосистем.
 Курс и критерии: [ADR-025](adr/0025-reliable-arch-and-multi-ecosystem-apps.md)
-и [roadmap](roadmap.md). ISO-команды и workflow пока не добавлены;
-старый `bash os iso` относится к musl-прототипу, а не к новому Live ISO.
-Сборка на GitHub не запущена; локально сохраняется среда WSL на F:.
+и [roadmap](roadmap.md). Новый интерфейс — `bash os arch iso build|verify|run|test`;
+из Windows — `.\Start-NekoOS.ps1 -Iso`, `-Iso -Build` и `-Iso -Test`.
+Полная инструкция и границы Live-сеанса — [Live ISO](live-iso.md), результат
+локальных и облачных проверок — [отчёт](validation-live-iso-2026-10-01.md).
+Старый `bash os iso` относится к musl-прототипу. Локальная среда WSL остаётся на F:.
 
 ## Основной путь с 2026-09-30
 

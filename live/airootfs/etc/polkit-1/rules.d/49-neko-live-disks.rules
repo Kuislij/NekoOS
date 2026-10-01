@@ -1,0 +1,8 @@
+// Internal-drive mounting through the desktop is disabled in the preview ISO.
+polkit.addRule(function(action, subject) {
+    if (action.id.indexOf("org.freedesktop.udisks2.filesystem-mount") === 0 &&
+        action.lookup("drive.removable") !== "true" &&
+        action.lookup("drive.hotplug") !== "true") {
+        return polkit.Result.NO;
+    }
+});

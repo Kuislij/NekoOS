@@ -1,0 +1,22 @@
+name: Source checks
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  checks:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Install test tools
+        run: sudo apt-get update && sudo apt-get install -y qemu-utils e2fsprogs
+      - name: Check shell syntax
+        run: |
+          bash -n os
+          find scripts live arch/airootfs/usr/local -type f -name '*.sh' -print0 | xargs -0 -n 1 bash -n
+      - name: Test project tools
+        run: python3 -m unittest discover -s tests -v
