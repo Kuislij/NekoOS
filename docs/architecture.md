@@ -90,6 +90,8 @@ BIOS/UEFI CD и USB проверяются без подключения пос�
 контрольный ext4-файл доступен записи, и его SHA-256 сверяется после загрузки.
 Systemd GPT auto-generator выключен, udisks/polkit ограничивают автоматическое
 монтирование внутренних дисков. Сеанс не имеет persistence и установщика.
+Live-служба `neko-live-font-cache` создаёт системный font cache до LightDM,
+поскольку archiso удаляет сборочные кэши; sandbox загрузчика SVG сохраняется.
 Подробности — [ADR-026](adr/0026-live-iso-and-github-build.md) и
 [отчёт Live ISO](validation-live-iso-2026-10-01.md).
 Установщик и полный цикл обновлений — последующие задачи;

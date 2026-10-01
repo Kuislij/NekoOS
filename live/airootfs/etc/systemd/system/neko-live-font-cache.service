@@ -1,0 +1,13 @@
+[Unit]
+Description=Prepare Live font cache before the graphical session
+ConditionPathExists=/usr/share/nekoos/live-mode
+Before=lightdm.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/fc-cache --force --system-only
+RemainAfterExit=yes
+TimeoutStartSec=30
+
+[Install]
+WantedBy=lightdm.service

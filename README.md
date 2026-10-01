@@ -130,6 +130,8 @@ TCG; подготовка доступа описана в [среде разр�
 **Файлы Live-сеанса находятся в RAM и исчезают после выключения.**
 Установщика и поддержки Secure Boot пока нет. Пользователь и пароль — `neko`.
 
+![NekoOS Live: Xfce и Thunar после загрузки UEFI USB](docs/assets/arch-live.png)
+
 В PowerShell из `F:\NekoOS`:
 
 ```powershell

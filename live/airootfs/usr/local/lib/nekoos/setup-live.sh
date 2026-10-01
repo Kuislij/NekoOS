@@ -3,6 +3,9 @@ set -euo pipefail
 bash /usr/local/lib/nekoos/setup-desktop.sh --development
 install -d -m 0755 /usr/share/nekoos
 printf 'ephemeral-live\n' > /usr/share/nekoos/live-mode
+# Archiso removes build caches. Prepare fonts before SVG decoding starts;
+# do not relax glycin's image-decoder sandbox to permit cache writes.
+systemctl enable neko-live-font-cache.service
 # No network login or first-boot installation services are enabled.
 systemctl mask sshd.service sshd.socket systemd-gpt-auto-generator.service
 install -d -m 0755 /etc/systemd/system-generators

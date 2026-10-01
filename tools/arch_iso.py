@@ -77,6 +77,8 @@ test ! -e "$HOME/neko-live-check"
 test "$(printf 'neko\n' | sudo -S -p '' blkid -s LABEL -o value /dev/vda)" = NEKO_ISO_PROBE
 if findmnt -rn -S /dev/vda | grep -q .; then exit 1; fi
 test "$(systemctl is-enabled sshd.service 2>/dev/null || true)" = masked
+systemctl is-active --quiet neko-live-font-cache.service
+test "$(systemctl show -p Result --value neko-live-font-cache.service)" = success
 '''
 
 
@@ -114,6 +116,12 @@ def test_iso(iso, headless, timeout, root=ROOT):
                     guest.send('stty -echo; set +o history; export PS1="neko$ "')
                     guest.check(LIVE_CHECK, 'NEKO_LIVE_ROOT_READY')
                     guest.check(vm.CORE_CHECK, 'NEKO_LIVE_DESKTOP_READY')
+                    guest.check('test -s /usr/share/licenses/nekoos-archiso-templates/LICENSE\n'
+                                'test -s /usr/share/licenses/nekoos-archiso-templates/AUTHORS.rst\n'
+                                'attempt=0\nwhile ! test -e "$HOME/.config/nekoos/desktop-initialized"; do\n'
+                                'attempt=$((attempt+1)); test "$attempt" -lt 30; sleep 1\ndone\nsleep 1\n'
+                                'if journalctl --user -b --no-pager | grep "glycin-svg.*dumped core" >/dev/null; then exit 1; fi',
+                                'NEKO_LIVE_WALLPAPER_READY')
                     mice = guest.qmp.execute('query-mice')
                     if not any(mouse['current'] and mouse['absolute'] for mouse in mice):
                         raise RuntimeError('Live USB tablet is not an active absolute pointer')

@@ -28,6 +28,8 @@ BIOS CD, UEFI CD, BIOS USB и UEFI USB; `-Headless` скрывает окна т
 изменения исчезают. Это ограничение включает установленные в сеансе пакеты.
 Установщика, постоянного overlay и поддержки Secure Boot сейчас нет.
 Внутренние диски автоматически не монтируются; SSH выключен.
+Перед графическим входом отдельная Live-служба подготавливает font cache:
+иначе удалённый при сборке кэш вызывает сбой SVG-обоев в glycin sandbox.
 Пользователь с sudo может вручную обращаться к дискам — Live-политика
 не защищает от осознанной команды администратора.
 
@@ -109,7 +111,7 @@ ISO/DD выберите **DD**. Запись полностью стирает �
 через меню Xfce и извлеките флешку.
 
 Порядок записи hybrid ISO описан в
-[официальной инструкции Rufus](https://github.com/pbatard/rufus/wiki/FAQ#user-content-why-doesnt-rufus-recommend-dd-mode-over-iso-mode-for-iso-hybrid-images)
+[официальном FAQ Rufus](https://github.com/pbatard/rufus/wiki/FAQ)
 и [ArchWiki](https://wiki.archlinux.org/title/USB_flash_installation_medium).
 Присутствие firmware в образе не является заявлением о проверке оборудования.
 
