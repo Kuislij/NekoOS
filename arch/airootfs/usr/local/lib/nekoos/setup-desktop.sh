@@ -40,6 +40,7 @@ if [[ ! -e "$panel_config" ]]; then
     install -m 0644 -o neko -g neko /etc/xdg/xfce4/panel/default.xml "$panel_config"
 fi
 chmod 0755 /usr/local/lib/nekoos/setup-desktop.sh /usr/local/lib/nekoos/desktop-first-login.sh
+chmod 0755 /usr/local/bin/neko-update
 
 # Upstream grub-mkconfig reads /etc/default/grub, not grub.d drop-ins.
 # Source our small override explicitly, keeping the packaged defaults.

@@ -1,0 +1,72 @@
+#!/usr/bin/env bash
+# Guest side of the managed-VM transaction. Never updates an ordinary running VM.
+set -euo pipefail
+export LC_ALL=C
+die() { printf 'NEKO_UPDATE_ERROR: %s\n' "$*" >&2; exit 1; }
+if [[ "${1:-status}" == status && $# -le 1 ]]; then
+    if [[ -f /usr/share/nekoos/managed-release ]]; then
+        cat /usr/share/nekoos/managed-release
+        printf 'kernel=%s\n' "$(uname -r)"
+    else
+        echo 'Managed updates are not configured. Use bash os arch update init on the VM host.'
+    fi
+    exit 0
+fi
+[[ $# == 5 && "$1" == prepare && $EUID == 0 ]] || die 'Internal usage: prepare TOKEN SNAPSHOT CORE_SHA EXTRA_SHA'
+token="$2"; snapshot="$3"; core_sha="$4"; extra_sha="$5"
+[[ "$token" =~ ^[0-9a-f]{32}$ && "$snapshot" =~ ^[0-9]{4}/[0-9]{2}/[0-9]{2}$ &&
+   "$core_sha" =~ ^[0-9a-f]{64}$ && "$extra_sha" =~ ^[0-9a-f]{64}$ ]] || die 'Invalid release fields.'
+[[ -f /run/neko-update-staging && ! -L /run/neko-update-staging &&
+   "$(cat /run/neko-update-staging)" == "$token" ]] || die 'Only the host-created staging VM may prepare updates.'
+[[ "$(findmnt -n -o FSTYPE /home)" == ext4 ]] || die 'A separate home filesystem is required.'
+[[ -n "$(ip -4 route show default)" ]] || die 'No network route; the active system has not been changed.'
+available=$(df --output=avail -B1 / | tail -n 1)
+(( available >= 3 * 1024 * 1024 * 1024 )) || die 'At least 3 GiB of free root filesystem space is required.'
+systemctl stop lightdm.service
+config=$(mktemp /run/neko-update-pacman.XXXXXXXX)
+trap 'rm -f "$config"' EXIT
+cat > "$config" <<EOF
+[options]
+Architecture = x86_64
+CheckSpace
+SigLevel = Required TrustedOnly DatabaseOptional
+LocalFileSigLevel = Required
+[core]
+Server = https://archive.archlinux.org/repos/$snapshot/\$repo/os/\$arch
+[extra]
+Server = https://archive.archlinux.org/repos/$snapshot/\$repo/os/\$arch
+EOF
+pacman --config "$config" -Syy --noconfirm
+printf '%s  /var/lib/pacman/sync/core.db\n%s  /var/lib/pacman/sync/extra.db\n' \
+    "$core_sha" "$extra_sha" | sha256sum -c -
+# Reject a target older than any installed package, or an unaccounted foreign
+# package. Never turn a full update into a mixture of old and new repositories.
+declare -A remote_versions
+while read -r name version; do remote_versions["$name"]="$version"; done < <(
+    pacman --config "$config" -Si $(pacman -Qq) |
+        awk '/^Name[ ]*:/ {name=$3} /^Version[ ]*:/ {print name, $3}')
+while read -r name version; do
+    [[ -n "${remote_versions[$name]:-}" ]] || die "Unsupported foreign package: $name"
+    (( $(vercmp "${remote_versions[$name]}" "$version") >= 0 )) || die "Target is older than installed $name; use rollback instead."
+done < <(pacman -Q)
+pacman --config "$config" -Syu --downloadonly --noconfirm
+echo NEKO_UPDATE_DOWNLOAD_READY
+baseline=$(wc -l < /var/log/pacman.log)
+pacman --config "$config" -Syu --noconfirm &
+transaction=$!
+# This marker also lets QA interrupt a real transaction after an ALPM upgrade.
+while kill -0 "$transaction" 2>/dev/null; do
+    if tail -n +"$((baseline + 1))" /var/log/pacman.log | grep '\[ALPM\] upgraded ' >/dev/null; then
+        echo NEKO_UPDATE_TRANSACTION_ACTIVE
+        break
+    fi
+    sleep 0.05
+done
+wait "$transaction"
+mkinitcpio -P
+grub-mkconfig -o /boot/grub/grub.cfg
+install -m 0644 "$config" /etc/pacman.conf
+printf 'snapshot=%s\nchannel=testing\n' "$snapshot" > /usr/share/nekoos/managed-release
+pacman -Q > /usr/share/nekoos/managed-packages.lock
+rm -f /run/neko-update-staging
+echo NEKO_UPDATE_PREPARED

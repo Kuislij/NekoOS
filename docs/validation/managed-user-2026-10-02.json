@@ -1,0 +1,11 @@
+{
+  "active_snapshot": "2026/10/01",
+  "facts": {
+    "KERNEL": "7.2.7-arch1-1",
+    "PACKAGES": "5eb49b45f96077f0c430f9372c9507c1ad9ab2d9b767e934332d1102bb7cd1a6"
+  },
+  "original_vm_sha256_unchanged": "edb19d78851cd7cffcbf8d1f56f027b51eefbb7193e47906ef4ac21a71df6294",
+  "result": "passed",
+  "retained_previous": true,
+  "uefi_desktop": true
+}

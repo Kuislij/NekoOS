@@ -1,0 +1,10 @@
+{
+  "format": 1,
+  "channel": "testing",
+  "snapshot": "2026/10/01",
+  "architecture": "x86_64",
+  "databases": {
+    "core": "48984a2b5a339954dc1a7c21bce7ff651b6b0c7747d0545c36ca454bee005a73",
+    "extra": "b2c0d01420d9bc1da17589c622fbf12c49af15d60e54f46cad8f6c307b5497ba"
+  }
+}

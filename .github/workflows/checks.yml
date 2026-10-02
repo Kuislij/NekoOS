@@ -17,6 +17,7 @@ jobs:
       - name: Check shell syntax
         run: |
           bash -n os
+          bash -n arch/airootfs/usr/local/bin/neko-update
           find scripts live arch/airootfs/usr/local -type f -name '*.sh' -print0 | xargs -0 -n 1 bash -n
       - name: Test project tools
         run: python3 -m unittest discover -s tests -v
