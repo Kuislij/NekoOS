@@ -1,0 +1,18 @@
+{
+  "result": "passed",
+  "launcher": "Manage-NekoOS.ps1 -Action verify",
+  "format_before": 1,
+  "format_after": 2,
+  "active": "gen-f0f24153e60942748dab0a0fcf354573",
+  "previous": "gen-f2fc987a5cb5410fa71180763fb049fe",
+  "trial": null,
+  "last_recovery": null,
+  "active_and_previous_retained": true,
+  "desktop_verified": true,
+  "original_vm_sha256": "edb19d78851cd7cffcbf8d1f56f027b51eefbb7193e47906ef4ac21a71df6294",
+  "original_vm_unchanged": true,
+  "previous_root_sha256": "2057ce914f1ab2c897afe4b0d8d59d54c6374048d714b13924f5f7567243caf6",
+  "previous_root_unchanged": true,
+  "home_path": "out/arch/managed/home.img",
+  "home_mounted_and_writable": true
+}

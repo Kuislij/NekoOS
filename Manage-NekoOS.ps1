@@ -1,7 +1,7 @@
 # Manage system generations of the separate NekoOS VM in the native WSL workspace.
 [CmdletBinding()]
 param(
-    [ValidateSet('init', 'status', 'prepare', 'activate', 'rollback', 'discard', 'forget-previous', 'test')]
+    [ValidateSet('init', 'status', 'prepare', 'activate', 'rollback', 'discard', 'forget-previous', 'verify', 'test', 'test-boot')]
     [string]$Action = 'status',
     [string]$Distribution = 'Ubuntu',
     [string]$LinuxUser = 'neko',

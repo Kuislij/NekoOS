@@ -1,0 +1,15 @@
+{
+  "actual_managed_vm_unchanged": true,
+  "desktop_automatic_recovery": true,
+  "interrupted_manager_recovered": true,
+  "kernel_automatic_recovery": true,
+  "offline_success_confirmed": true,
+  "orphan_writer_refused": true,
+  "recovery_gui_input": true,
+  "result": "passed",
+  "user_file_sha256": "92fd501fc1f6e70aa423f3f53afbb945c8c21bb9af2e3ccbf0a6ddbb99cfcca1",
+  "validation_inputs_sha256": {
+    "tools/arch_boot_test.py": "51370baab6e7a1b5f1c0bb512b9ab8d87a587913d29b0a66faa7555fec44e64f",
+    "tools/arch_update.py": "fdc2e5c78501e9e6953255f4eab80f02e23db937b85997ebcb92fc8cb7364845"
+  }
+}

@@ -28,6 +28,43 @@ HOME_FILE = '/home/neko/Documents/Neko-update-check.txt'
 AFTER_FILE = '/home/neko/after-update/README.txt'
 
 
+class BootFailure(RuntimeError):
+    """The guest started but failed to reach a working desktop."""
+
+
+class BootCancelled(RuntimeError):
+    """A user closed an unconfirmed VM; allow another attempt."""
+
+
+BOOT_CHECK = r'''
+test "$(id -u)" = 1000
+test "$(cat /proc/1/comm)" = systemd
+test "$(uname -r)" = "$(pacman -Qlq linux | sed -n 's@^/usr/lib/modules/\([^/]*\)/pkgbase$@\1@p')"
+test "$(systemctl is-enabled lightdm.service)" != masked
+attempt=0
+until systemctl is-active --quiet lightdm.service &&
+      pgrep -u 1000 -x xfce4-session >/dev/null &&
+      pgrep -u 1000 -x xfce4-panel >/dev/null &&
+      pgrep -u 1000 -x xfdesktop >/dev/null &&
+      pgrep -u 1000 -x xfwm4 >/dev/null &&
+      pgrep -u 1000 -x '[Tt]hunar' >/dev/null; do
+    if systemctl is-failed --quiet lightdm.service; then exit 1; fi
+    attempt=$((attempt + 1)); test "$attempt" -lt 90; sleep 1
+done
+desktop_environment
+read -r screen_width screen_height < <(xdotool getdisplaygeometry)
+attempt=0
+until mapped_shell_window '[Xx]fce4-panel' DOCK "$((screen_width / 2))" 16 &&
+      mapped_shell_window '[Xx]fdesktop' DESKTOP "$((screen_width * 9 / 10))" "$((screen_height * 9 / 10))"; do
+    attempt=$((attempt + 1)); test "$attempt" -lt 90; sleep 1
+done
+attempt=0
+until wmctrl -xa Thunar; do
+    attempt=$((attempt + 1)); test "$attempt" -lt 30; sleep 1
+done
+'''
+
+
 def release_record(value):
     if (not isinstance(value, dict) or set(value) != {'format', 'channel', 'snapshot', 'architecture', 'databases'}
             or value['format'] != 1 or value['channel'] != 'testing' or value['architecture'] != 'x86_64'
@@ -126,10 +163,18 @@ class Manager:
     def save(self, state):
         atomic_json(self.state_path, state)
 
-    def load(self):
+    def load(self, check_disks=True):
         state = json.loads(vm.read_regular(self.state_path))
+        # Old VM metadata remains readable. Persist migration with the next
+        # state transition, never rewrite a user's disks to enable the guard.
+        if isinstance(state, dict) and state.get('format') == 1:
+            if set(state) != {'format', 'active', 'previous', 'pending', 'generations'}:
+                raise RuntimeError('Invalid legacy managed VM state')
+            state = {**state, 'format': 2, 'trial': None, 'last_recovery': None}
+            if state['previous'] is not None:
+                state['trial'] = self.new_trial(state)
         if (not isinstance(state, dict) or set(state) != {'format', 'active', 'previous', 'pending', 'generations'}
-                or state['format'] != 1 or not isinstance(state['generations'], dict)):
+                | {'trial', 'last_recovery'} or state['format'] != 2 or not isinstance(state['generations'], dict)):
             raise RuntimeError('Invalid managed VM state')
         for identifier, record in state['generations'].items():
             self.disk(identifier)
@@ -162,6 +207,22 @@ class Manager:
             self.disk(identifier)
         if len(set(references)) != len(references) or set(references) != set(state['generations']):
             raise RuntimeError('Invalid generation references')
+        trial = state['trial']
+        if trial is not None:
+            if (not isinstance(trial, dict) or set(trial) != {'id', 'previous', 'phase', 'nonce'} or
+                    trial['id'] != state['active'] or trial['previous'] != state['previous'] or
+                    state['previous'] is None or state['pending'] is not None or
+                    trial['phase'] not in ('armed', 'booting') or
+                    not isinstance(trial['nonce'], str) or not re.fullmatch('[0-9a-f]{32}', trial['nonce'])):
+                raise RuntimeError('Invalid first-boot recovery state')
+        recovery = state['last_recovery']
+        if recovery is not None:
+            if (not isinstance(recovery, dict) or set(recovery) != {'failed', 'restored', 'cause', 'time_utc'} or
+                    recovery['cause'] not in ('desktop_not_ready', 'interrupted_boot') or
+                    not isinstance(recovery['time_utc'], str) or
+                    not re.fullmatch(r'\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z', recovery['time_utc'])):
+                raise RuntimeError('Invalid recovery history')
+            self.disk(recovery['failed']); self.disk(recovery['restored'])
         vm.safe_regular(self.home, writable=True)
         for identifier in references:
             if pending is not None and identifier == pending['id'] and pending['phase'] != 'ready':
@@ -174,10 +235,53 @@ class Manager:
                 raise RuntimeError('Bootable generation lacks its package/kernel verification facts')
             if identifier != state['active'] and record['seal'] is None:
                 raise RuntimeError('Inactive generation is missing its verification seal')
-            standalone(self.disk(identifier))
-            if identifier != state['active'] and state['generations'][identifier]['seal'] is not None:
+            if check_disks:
+                standalone(self.disk(identifier))
+            if check_disks and identifier != state['active'] and state['generations'][identifier]['seal'] is not None:
                 if vm.sha256_file(self.disk(identifier)) != state['generations'][identifier]['seal']:
                     raise RuntimeError('Inactive generation checksum failed; preserving all disks')
+        return state
+
+    def new_trial(self, state):
+        return {'id': state['active'], 'previous': state['previous'],
+                'phase': 'armed', 'nonce': uuid.uuid4().hex}
+
+    def ensure_confirmed(self, state):
+        if state['trial'] is not None:
+            raise RuntimeError('First boot is not confirmed. Run or verify the VM before preparing or deleting recovery generations')
+
+    def begin_boot(self, state):
+        if state['trial'] is None or state['trial']['phase'] != 'armed':
+            raise RuntimeError('No armed first boot')
+        state['trial']['phase'] = 'booting'
+        state['trial']['nonce'] = uuid.uuid4().hex
+        self.save(state)  # Durable before QEMU starts; power loss cannot count as success.
+        return state['trial']['nonce']
+
+    def finish_boot(self, identifier, nonce, cancelled=False):
+        # QEMU owns the disk locks now. Validate metadata without opening
+        # those disks; the launcher holds the managed lock for this entire run.
+        state = self.load(check_disks=False)
+        trial = state['trial']
+        if trial is None or (trial['id'], trial['nonce'], trial['phase']) != (identifier, nonce, 'booting'):
+            raise RuntimeError('Stale or mismatched first-boot confirmation')
+        state['trial'] = self.new_trial(state) if cancelled else None
+        self.save(state)
+
+    def recover_boot(self, cause):
+        state = self.load()  # Refuses an orphan QEMU writer or altered fallback.
+        if state['trial'] is None or state['trial']['phase'] != 'booting':
+            raise RuntimeError('No interrupted or failed first boot to recover')
+        if cause not in ('desktop_not_ready', 'interrupted_boot'):
+            raise RuntimeError('Invalid recovery cause')
+        failed, restored = state['active'], state['previous']
+        state['generations'][failed]['seal'] = vm.sha256_file(self.disk(failed))
+        state['active'], state['previous'] = restored, failed
+        state['trial'] = None  # Never loop between two broken generations.
+        state['last_recovery'] = {'failed': failed, 'restored': restored, 'cause': cause,
+                                 'time_utc': datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')}
+        self.save(state)
+        print('Новая версия не подтвердила рабочий стол. Возвращаю предыдущую систему; домашний диск сохраняется.', flush=True)
         return state
 
     def require_space(self):
@@ -189,26 +293,82 @@ class Manager:
         return release_record(json.loads(vm.read_regular(self.root / 'arch/releases/testing.json')))
 
     @contextmanager
-    def boot(self, disk, home, tag, uefi=False, offline=False, home_format='raw'):
+    def boot(self, disk, home, tag, uefi=False, offline=False, home_format='raw',
+             headless=True, no_reboot=True, guarded=False, timeout=None):
         with tempfile.TemporaryDirectory(prefix='managed-boot-', dir=self.directory) as name:
             work = Path(name)
             qmp = work / 'qmp.sock'
             firmware = vm.uefi_firmware(work) if uefi else None
-            command = vm.qemu_command(disk, 'grub', headless=True, qmp_path=qmp, firmware=firmware, no_reboot=True)
+            command = vm.qemu_command(disk, 'grub', headless=headless, qmp_path=qmp, firmware=firmware, no_reboot=no_reboot)
             command += ['-drive', f'file={str(home).replace(",", ",,")},format={home_format},if=virtio']
             if offline:
                 index = command.index('-nic')
                 command[index + 1] = 'none'
             log = self.logs / f'arch-update-{tag}.log'
-            with vm.Guest(command, log, timeout=self.timeout) as guest:
+            with vm.Guest(command, log, timeout=timeout or self.timeout) as guest:
                 while not qmp.exists():
                     if guest.process.poll() is not None or time.monotonic() >= guest.deadline:
                         raise RuntimeError(f'No update QMP socket; see {log}')
                     time.sleep(.1)
                 guest.qmp = vm.QMP(qmp)
-                guest.wait('NEKO_ARCH_READY')
+                try:
+                    guest.wait('NEKO_ARCH_READY')
+                except RuntimeError as error:
+                    if guarded:
+                        self.raise_boot_error(guest, error)
+                    raise
                 guest.send('stty -echo; set +o history; cd /home/neko')
                 yield guest
+
+    def raise_boot_error(self, guest, error):
+        if 'Kernel panic' in guest.content() or guest.process.poll() is None:
+            if guest.qmp is not None:
+                try:
+                    guest.qmp.screenshot(self.previews / (guest.log.stem + '-failed.png'))
+                except (OSError, RuntimeError):
+                    pass
+            raise BootFailure(str(error)) from error
+        if guest.process.returncode == 0:
+            raise BootCancelled('First boot was closed before confirmation') from error
+        raise error  # Host/display/storage startup failures do not select another OS.
+
+    @contextmanager
+    def guarded_boot(self, tag='first-boot', headless=True, uefi=False, timeout=180, offline=False):
+        state = self.load()
+        if state['trial'] is not None and state['trial']['phase'] == 'booting':
+            state = self.recover_boot('interrupted_boot')
+        identifier = state['active']
+        nonce = self.begin_boot(state) if state['trial'] is not None else None
+        confirmed = False
+        try:
+            with self.boot(self.disk(identifier), self.home, tag, uefi, offline,
+                           headless=headless, no_reboot=False, guarded=nonce is not None, timeout=timeout) as guest:
+                if nonce is not None:
+                    try:
+                        guest.check(HOME_CHECK + BOOT_CHECK, 'NEKO_BOOT_READY_' + nonce)
+                    except RuntimeError as error:
+                        self.raise_boot_error(guest, error)
+                    self.finish_boot(identifier, nonce)
+                    print('Рабочий стол новой версии проверен. Предыдущая система сохранена для отката.', flush=True)
+                else:
+                    guest.check(HOME_CHECK + BOOT_CHECK, 'NEKO_RECOVERED_DESKTOP_READY')
+                confirmed = True
+                yield guest
+        except BootFailure:
+            if confirmed or nonce is None:
+                raise
+            # The Guest context has stopped QEMU before changing pointers or hashes.
+            recovered = self.recover_boot('desktop_not_ready')
+            with self.boot(self.disk(recovered['active']), self.home, tag + '-recovered', uefi, offline,
+                           headless=headless, no_reboot=False, timeout=timeout) as guest:
+                guest.check(HOME_CHECK + BOOT_CHECK, 'NEKO_RECOVERED_DESKTOP_READY')
+                yield guest  # One fallback attempt; an unhealthy fallback stops here.
+        except BaseException:
+            if nonce is not None and not confirmed:
+                current = self.load(check_disks=False)['trial']
+                if current is not None and (current['id'], current['nonce'], current['phase']) == (identifier, nonce, 'booting'):
+                    self.finish_boot(identifier, nonce, cancelled=True)
+            raise
 
     def install_helper(self, guest):
         source = self.root / 'arch/airootfs/usr/local/bin/neko-update'
@@ -253,7 +413,8 @@ class Manager:
             facts = self.facts(guest)
             guest.poweroff()
         self.health(identifier, self.home, 'init-verify')
-        self.save({'format': 1, 'active': identifier, 'previous': None, 'pending': None,
+        self.save({'format': 2, 'active': identifier, 'previous': None, 'pending': None,
+                   'trial': None, 'last_recovery': None,
                    'generations': {identifier: {'snapshot': 'imported', 'seal': None, 'facts': facts}}})
         print('NEKO_MANAGED_INIT_PASSED: copied system, separate home; original VM retained', flush=True)
 
@@ -269,6 +430,7 @@ class Manager:
 
     def prepare(self, fault=None):
         state = self.load()
+        self.ensure_confirmed(state)
         if state['pending'] is not None:
             raise RuntimeError('A candidate already exists; activate it or discard it before preparing another')
         if state['previous'] is not None:
@@ -329,6 +491,7 @@ class Manager:
         state['active'] = state['pending']['id']
         state['previous'] = previous
         state['pending'] = None
+        state['trial'] = self.new_trial(state)
         self.save(state)  # The single durable switch; both complete roots remain present.
         print('NEKO_UPDATE_ACTIVATED: previous system retained; home was not switched', flush=True)
 
@@ -338,6 +501,7 @@ class Manager:
             raise RuntimeError('Rollback requires a retained generation and no pending transaction')
         state['generations'][state['active']]['seal'] = vm.sha256_file(self.disk(state['active']))
         state['active'], state['previous'] = state['previous'], state['active']
+        state['trial'] = self.new_trial(state)
         self.save(state)
         print('NEKO_UPDATE_ROLLED_BACK: previous system selected; current home retained', flush=True)
 
@@ -356,6 +520,7 @@ class Manager:
 
     def forget_previous(self):
         state = self.load()
+        self.ensure_confirmed(state)
         if state['pending'] is not None or state['previous'] is None:
             raise RuntimeError('A retained generation and no pending transaction are required')
         identifier = state['previous']
@@ -366,11 +531,25 @@ class Manager:
 
     def run(self, headless=False, uefi=False):
         state = self.load()
+        if state['trial'] is not None:
+            print('Проверяю первый запуск. Журнал: build/logs/arch-update-first-boot.log', flush=True)
+            if headless:
+                print('При первом запуске консоль занята проверкой. Для обычной консоли запустите VM повторно после подтверждения.', flush=True)
+            with self.guarded_boot(headless=headless, uefi=uefi) as guest:
+                guest.process.wait()
+            return
         with tempfile.TemporaryDirectory(prefix='managed-run-', dir=self.directory) as name:
             firmware = vm.uefi_firmware(Path(name)) if uefi else None
             command = vm.qemu_command(self.disk(state['active']), 'grub', headless=headless, firmware=firmware)
             command += ['-drive', f'file={str(self.home).replace(",", ",,")},format=raw,if=virtio']
             vm.run_vm(command, headless, self.root)
+
+    def verify(self, uefi=False):
+        with self.guarded_boot(tag='verify-boot', uefi=uefi) as guest:
+            guest.check(HOME_CHECK + BOOT_CHECK, 'NEKO_VERIFIED_DESKTOP_READY')
+            guest.qmp.screenshot(self.previews / 'arch-verified-boot.png')
+            guest.poweroff()
+        print('NEKO_MANAGED_BOOT_VERIFIED', flush=True)
 
 
 def test_updates(root=ROOT, timeout=1200):
@@ -415,7 +594,7 @@ def test_updates(root=ROOT, timeout=1200):
         create_after = r'''desktop_environment
 wmctrl -xa Thunar
 '''
-        with manager.boot(manager.disk(candidate), manager.home, 'activated') as guest:
+        with manager.guarded_boot(tag='activated') as guest:
             guest.check(HOME_CHECK + vm.CORE_CHECK + check + create_after, 'NEKO_ACTIVATED_DESKTOP_READY')
             guest.qmp.key('ctrl-shift-n'); time.sleep(.7)
             guest.qmp.type_ascii('after-update'); guest.qmp.key('ret')
@@ -445,7 +624,7 @@ wmctrl -xa Thunar
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('action', choices=('init', 'status', 'prepare', 'activate', 'rollback', 'discard',
-                                        'forget-previous', 'run', 'test'))
+                                        'forget-previous', 'run', 'verify', 'test', 'test-boot'))
     parser.add_argument('--headless', action='store_true')
     parser.add_argument('--uefi', action='store_true')
     parser.add_argument('--timeout', type=int, default=1200)
@@ -454,7 +633,7 @@ def main(argv=None):
         parser.error('use an ordinary user in the native Linux workspace')
     if args.timeout < 1:
         parser.error('--timeout must be positive')
-    if args.action != 'run' and (args.uefi or args.headless):
+    if args.action not in ('run', 'verify') and (args.uefi or args.headless):
         parser.error('only run accepts display/firmware flags; update tests are always headless BIOS+UEFI')
     for tool in ('qemu-img', 'qemu-system-x86_64', 'mkfs.ext4'):
         if shutil.which(tool) is None:
@@ -462,6 +641,10 @@ def main(argv=None):
     with vm.file_lock(ROOT / 'build/arch/.build.lock', shared=True), vm.file_lock(ROOT / 'out/arch/.managed.lock'):
         if args.action == 'test':
             test_updates(ROOT, args.timeout)
+            return
+        if args.action == 'test-boot':
+            from arch_boot_test import test_boot_guard
+            test_boot_guard(ROOT)
             return
         manager = Manager(timeout=args.timeout)
         if args.action == 'init':
@@ -477,6 +660,8 @@ def main(argv=None):
             print(json.dumps(manager.load(), indent=2))
         elif args.action == 'run':
             manager.run(args.headless, args.uefi)
+        elif args.action == 'verify':
+            manager.verify(args.uefi)
         elif args.action == 'forget-previous':
             manager.forget_previous()
         else:
