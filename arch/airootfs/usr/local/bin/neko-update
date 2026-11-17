@@ -24,21 +24,25 @@ available=$(df --output=avail -B1 / | tail -n 1)
 (( available >= 3 * 1024 * 1024 * 1024 )) || die 'At least 3 GiB of free root filesystem space is required.'
 systemctl stop lightdm.service
 config=$(mktemp /run/neko-update-pacman.XXXXXXXX)
-trap 'rm -f "$config"' EXIT
+cache=/var/cache/pacman/pkg
+download=$(mktemp -d "$cache/.neko-update.XXXXXXXX")
+trap 'rm -f "$config" "$download"/{log,plan,package,signature}; rmdir "$download"' EXIT
 cat > "$config" <<EOF
 [options]
 Architecture = x86_64
 CheckSpace
 SigLevel = Required TrustedOnly DatabaseOptional
 LocalFileSigLevel = Required
-[core]
-Server = https://archive.archlinux.org/repos/$snapshot/\$repo/os/\$arch
-[extra]
-Server = https://archive.archlinux.org/repos/$snapshot/\$repo/os/\$arch
 EOF
-pacman --config "$config" -Syy --noconfirm
+for repo in core extra; do
+    printf '[%s]\n' "$repo" >> "$config"
+    for archive in archive.archlinux.org umea.archive.pkgbuild.com; do
+        printf 'Server = https://%s/repos/%s/$repo/os/$arch\n' "$archive" "$snapshot" >> "$config"
+    done
+done
+pacman --config "$config" -Syy --noconfirm || die 'Cannot synchronize the pinned archive databases.'
 printf '%s  /var/lib/pacman/sync/core.db\n%s  /var/lib/pacman/sync/extra.db\n' \
-    "$core_sha" "$extra_sha" | sha256sum -c -
+    "$core_sha" "$extra_sha" | sha256sum -c - || die 'Archive database checksum differs from the pinned release.'
 # Reject a target older than any installed package, or an unaccounted foreign
 # package. Never turn a full update into a mixture of old and new repositories.
 declare -A remote_versions
@@ -49,10 +53,48 @@ while read -r name version; do
     [[ -n "${remote_versions[$name]:-}" ]] || die "Unsupported foreign package: $name"
     (( $(vercmp "${remote_versions[$name]}" "$version") >= 0 )) || die "Target is older than installed $name; use rollback instead."
 done < <(pacman -Q)
-pacman --config "$config" -Syu --downloadonly --noconfirm
+# A second refresh here would replace the exact databases we just verified.
+if ! pacman --config "$config" -Su --downloadonly --noconfirm 2>&1 | tee "$download/log"; then
+    # The dated repository and the per-package archive use different paths.
+    # Retry transport errors only. Signature and integrity failures stop here.
+    grep -Fq 'failed to commit transaction (failed to retrieve some files)' "$download/log" ||
+        die 'Package download or validation failed.'
+    pacman --config "$config" -Sup --print-format '%n %f %h %g' > "$download/plan"
+    while read -r name filename digest signature; do
+        [[ "$name" =~ ^[a-zA-Z0-9@_+.-]+$ && "$name" != . && "$name" != .. &&
+           "$filename" == "$name"-*.pkg.tar.* && "$filename" =~ ^[a-zA-Z0-9@_+.~:-]+$ &&
+           "$digest" =~ ^[0-9a-f]{64}$ ]] || die 'Invalid package entry in the pinned databases.'
+        url="https://umea.archive.pkgbuild.com/packages/${name:0:1}/$name/$filename"
+        if [[ -f "$cache/$filename" ]]; then
+            printf '%s  %s\n' "$digest" "$cache/$filename" | sha256sum -c - ||
+                die "Cached package checksum mismatch: $name"
+        else
+            printf 'Fetching %s from the package archive\n' "$filename"
+            curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' \
+                --connect-timeout 8 --speed-time 30 --speed-limit 1024 --max-time 600 \
+                --output "$download/package" "$url" || die "Package archive unavailable for $name"
+            printf '%s  %s\n' "$digest" "$download/package" | sha256sum -c - ||
+                die "Package archive checksum mismatch: $name"
+            mv -T -- "$download/package" "$cache/$filename"
+        fi
+        # libalpm expects the package and its detached signature together in cache.
+        if [[ ! -f "$cache/$filename.sig" ]]; then
+            if [[ -n "$signature" && "$signature" != '(null)' ]]; then
+                printf %s "$signature" | base64 -d > "$download/signature" ||
+                    die "Invalid signature encoding for $name"
+            else
+                curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' \
+                    --connect-timeout 8 --max-time 30 --max-filesize 1048576 \
+                    --output "$download/signature" "$url.sig" || die "Signature unavailable for $name"
+            fi
+            mv -T -- "$download/signature" "$cache/$filename.sig"
+        fi
+    done < "$download/plan"
+    pacman --config "$config" -Su --downloadonly --noconfirm
+fi
 echo NEKO_UPDATE_DOWNLOAD_READY
 baseline=$(wc -l < /var/log/pacman.log)
-pacman --config "$config" -Syu --noconfirm &
+pacman --config "$config" -Su --noconfirm &
 transaction=$!
 # This marker also lets QA interrupt a real transaction after an ALPM upgrade.
 while kill -0 "$transaction" 2>/dev/null; do

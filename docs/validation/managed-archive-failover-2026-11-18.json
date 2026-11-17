@@ -1,0 +1,28 @@
+{
+  "both_archives_down_preserved_active": true,
+  "candidate_bios_uefi": true,
+  "home_survived_update_and_rollback": true,
+  "interrupted_alpm_preserved_active": true,
+  "offline_preserved_active": true,
+  "persistent_test_file_sha256": "92fd501fc1f6e70aa423f3f53afbb945c8c21bb9af2e3ccbf0a6ddbb99cfcca1",
+  "post_update_gui_file_survived_rollback": true,
+  "primary_archive_outage_updated": true,
+  "result": "passed",
+  "snapshot": "2026/10/01",
+  "source_packages": {
+    "KERNEL": "7.2.7-arch1-1",
+    "PACKAGES": "851f00bef00610d7694cc7d50c1f8c7b55c39301ce7756b7c189580de7a96473"
+  },
+  "unchanged_active_sha256_after_failures": "476eebdc8777714e8e8cbc7e41d59c75ccf192580de3b8ed399bda49bcc27b57",
+  "unchanged_home_sha256_after_failures": "ce62a5348891f08dc4c0577439e308b76a462fe1a5682534fd8c34156fd7a7ff",
+  "updated_packages": {
+    "KERNEL": "7.2.7-arch1-1",
+    "PACKAGES": "5eb49b45f96077f0c430f9372c9507c1ad9ab2d9b767e934332d1102bb7cd1a6"
+  },
+  "validation_inputs_sha256": {
+    "arch/airootfs/usr/local/bin/neko-update": "b439f5d4da3d97ebba392b06ef6a3afe75c4c0df55d49498e01bbcb4d0c6ac32",
+    "arch/releases/testing.json": "e057716cbf88536169b067cfa5ca9e22aeb521da56b012d920158495f9c3a70a",
+    "tools/arch_update.py": "36da67446048c4aa8b1d70fdaa0ad527e7151fa2db13ed92ff50497f4cdb87be"
+  },
+  "wrong_database_pin_preserved_active": true
+}

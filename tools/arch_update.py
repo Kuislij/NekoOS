@@ -458,6 +458,21 @@ class Manager:
                     guest.check(f'printf %s {token} | sudo -n tee /run/neko-update-staging >/dev/null', 'NEKO_STAGING_READY')
                     command = ['sudo', '-n', '/usr/local/bin/neko-update', 'prepare', token, release['snapshot'],
                                release['databases']['core'], release['databases']['extra']]
+                    if fault == 'wrong-pin':
+                        command[-1] = '0' * 64
+                    if fault in ('primary-down', 'archives-down'):
+                        # systemd-resolved reads the guest-wide hosts file, even when
+                        # its client is in a private mount namespace.
+                        blocked = ['archive.archlinux.org']
+                        if fault == 'archives-down':
+                            blocked.append('umea.archive.pkgbuild.com')
+                        hosts = ' '.join(blocked)
+                        guest.check("sudo -n cp -p /etc/hosts /run/neko-qa-hosts\n"
+                                    f"printf '127.0.0.1 {hosts}\\n::1 {hosts}\\n' | "
+                                    "sudo -n tee -a /etc/hosts >/dev/null\n"
+                                    f"for host in {hosts}; do\n"
+                                    "  test \"$(getent ahostsv4 \"$host\" | awk '{print $1}' | sort -u)\" = 127.0.0.1\n"
+                                    "done", 'NEKO_QA_HOSTS_READY')
                     guest.send(shlex.join(command) + ' || ' + vm.marker_command('ARCH_GUEST_FAILED'))
                     if fault == 'interrupt':
                         guest.wait('NEKO_UPDATE_TRANSACTION_ACTIVE')
@@ -465,6 +480,9 @@ class Manager:
                         guest.process.wait(timeout=10)
                         raise RuntimeError('QA interrupted a real ALPM transaction')
                     guest.wait('NEKO_UPDATE_PREPARED')
+                    if fault == 'primary-down':
+                        guest.check('sudo -n cp -p /run/neko-qa-hosts /etc/hosts\n'
+                                    'cmp /run/neko-qa-hosts /etc/hosts', 'NEKO_QA_HOSTS_RESTORED')
                     guest.poweroff()
                 facts = self.health(identifier, private_home, 'candidate', home_format='qcow2')
                 # Second firmware gate uses the same isolated home, never real user data.
@@ -568,7 +586,12 @@ def test_updates(root=ROOT, timeout=1200):
         check = f'test -O {HOME_FILE}; test "$(sha256sum {HOME_FILE} | cut -d\" \" -f1)" = {digest}\n'
         manager.health(old, manager.home, 'data-before', extra=write + check)
         root_hash, home_hash = vm.sha256_file(manager.disk(old)), vm.sha256_file(manager.home)
-        for fault in ('offline', 'interrupt'):
+        expected_errors = {
+            'offline': 'NEKO_UPDATE_ERROR: No network route;',
+            'archives-down': 'NEKO_UPDATE_ERROR: Cannot synchronize the pinned archive databases.',
+            'wrong-pin': 'NEKO_UPDATE_ERROR: Archive database checksum differs from the pinned release.',
+        }
+        for fault in (*expected_errors, 'interrupt'):
             try:
                 manager.prepare(fault=fault)
             except RuntimeError as error:
@@ -576,16 +599,20 @@ def test_updates(root=ROOT, timeout=1200):
                     raise
                 if fault == 'interrupt' and str(error) != 'QA interrupted a real ALPM transaction':
                     raise RuntimeError('The interruption test did not reach an ALPM upgrade') from error
-                if fault == 'offline' and 'NEKO_UPDATE_ERROR: No network route;' not in (
-                        manager.logs / 'arch-update-prepare-offline.log').read_text(errors='replace'):
-                    raise RuntimeError('The offline test did not reach the network precondition') from error
+                if fault in expected_errors:
+                    serial = (manager.logs / f'arch-update-prepare-{fault}.log').read_text(errors='replace')
+                    if expected_errors[fault] not in serial or 'NEKO_UPDATE_DOWNLOAD_READY' in serial:
+                        raise RuntimeError(f'Unexpected failure point for {fault}') from error
                 print(f'Expected failure ({fault}): {error}', flush=True)
             else:
                 raise RuntimeError(f'{fault} unexpectedly succeeded')
             if manager.load()['active'] != old or vm.sha256_file(manager.disk(old)) != root_hash or vm.sha256_file(manager.home) != home_hash:
                 raise RuntimeError('A failed transaction modified active system or user data')
             manager.discard()
-        manager.prepare()
+        manager.prepare(fault='primary-down')
+        serial = (manager.logs / 'arch-update-prepare-primary-down.log').read_text(errors='replace')
+        if not re.search(r"failed retrieving file '[^']+\.db' from archive\.archlinux\.org", serial):
+            raise RuntimeError('Expected a real primary archive download failure')
         staged = manager.load()
         candidate = staged['pending']['id']
         if staged['generations'][candidate]['facts']['PACKAGES'] == staged['generations'][old]['facts']['PACKAGES']:
@@ -602,6 +629,9 @@ wmctrl -xa Thunar
                         'attempt=$((attempt+1)); test "$attempt" -lt 30; sleep 1\ndone\n'
                         f'printf %s {shlex.quote(NOTE)} > {AFTER_FILE}\n', 'NEKO_AFTER_UPDATE_DATA_READY')
             guest.poweroff()
+        selected = manager.load()
+        if selected['active'] != candidate or selected['trial'] is not None:
+            raise RuntimeError('The updated generation did not confirm its first desktop boot')
         manager.rollback()
         restored = manager.health(old, manager.home, 'rollback', uefi=True, extra=check +
                                   f'test -O {AFTER_FILE}; test "$(sha256sum {AFTER_FILE} | cut -d\" \" -f1)" = {digest}\n')
@@ -611,6 +641,8 @@ wmctrl -xa Thunar
                    'updated_packages': staged['generations'][candidate]['facts'],
                    'snapshot': manager.release()['snapshot'], 'offline_preserved_active': True,
                    'interrupted_alpm_preserved_active': True, 'home_survived_update_and_rollback': True,
+                   'primary_archive_outage_updated': True, 'both_archives_down_preserved_active': True,
+                   'wrong_database_pin_preserved_active': True,
                    'post_update_gui_file_survived_rollback': True, 'candidate_bios_uefi': True,
                    'unchanged_active_sha256_after_failures': root_hash,
                    'unchanged_home_sha256_after_failures': home_hash,
